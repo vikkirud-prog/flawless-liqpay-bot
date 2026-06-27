@@ -1,7 +1,18 @@
 services:
-  - type: web
-    name: flawless-liqpay-bot
+  - type: worker
+    name: flawless-liqpay-invoice-bot
     env: python
-    plan: free
+    plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: LIQPAY_PUBLIC_KEY
+        sync: false
+      - key: LIQPAY_PRIVATE_KEY
+        sync: false
+      - key: CURRENCY
+        value: UAH
+      - key: ALLOWED_USER_IDS
+        sync: false

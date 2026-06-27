@@ -1,44 +1,25 @@
-# Flawless LiqPay Telegram Bot
+# Flawless LiqPay Invoice Phone Bot
 
-Простой Telegram-бот для быстрого создания ссылок на оплату LiqPay.
+Telegram-бот для создания LiqPay-инвойсов по номеру телефона клиента.
 
-## Что умеет
+## Как работает
 
-1. Менеджер нажимает "Создать счет".
-2. Вводит сумму.
-3. Вводит описание заказа.
-4. Бот создает ссылку LiqPay и кнопку оплаты.
+1. Менеджер нажимает **Создать инвойс**.
+2. Вводит номер телефона клиента.
+3. Вводит сумму.
+4. Вводит описание заказа.
+5. Бот создает инвойс через LiqPay API action `invoice_send`.
 
-## Переменные в Render
-
-Добавить в Environment:
-
-- TELEGRAM_BOT_TOKEN
-- LIQPAY_PUBLIC_KEY
-- LIQPAY_PRIVATE_KEY
-- WEBHOOK_URL
-
-WEBHOOK_URL — это адрес сервиса Render, например:
+## Переменные окружения в Render
 
 ```text
-https://flawless-liqpay-bot.onrender.com
+BOT_TOKEN=токен_бота_из_BotFather
+LIQPAY_PUBLIC_KEY=публичный_ключ_LiqPay
+LIQPAY_PRIVATE_KEY=приватный_ключ_LiqPay
+CURRENCY=UAH
+ALLOWED_USER_IDS=твой_telegram_id
 ```
 
-## Render настройки
+`ALLOWED_USER_IDS` можно оставить пустым, но безопаснее указать свой Telegram ID.
 
-Build Command:
-
-```bash
-pip install -r requirements.txt
-```
-
-Start Command:
-
-```bash
-python main.py
-```
-
-## Важно
-
-Не публикуйте TELEGRAM_BOT_TOKEN и LIQPAY_PRIVATE_KEY.
-Если токен попал на скриншот, обновите его через BotFather командой /revoke.
+Чтобы узнать ID, нажми в боте **Мой Telegram ID** или отправь `/id`.
