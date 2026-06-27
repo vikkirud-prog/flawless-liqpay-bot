@@ -9,11 +9,20 @@
 3. Вводит описание заказа.
 4. Бот создает ссылку LiqPay и кнопку оплаты.
 
-## Переменные, которые надо добавить в Render
+## Переменные в Render
+
+Добавить в Environment:
 
 - TELEGRAM_BOT_TOKEN
 - LIQPAY_PUBLIC_KEY
 - LIQPAY_PRIVATE_KEY
+- WEBHOOK_URL
+
+WEBHOOK_URL — это адрес сервиса Render, например:
+
+```text
+https://flawless-liqpay-bot.onrender.com
+```
 
 ## Render настройки
 
