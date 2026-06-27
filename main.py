@@ -215,9 +215,11 @@ def handle_invoice_steps(message):
         href = result.get("href") or result.get("url") or result.get("checkout_url")
         invoice_id = result.get("invoice_id") or result.get("order_id") or result.get("id")
 
+        display_phone = "0" + phone[2:] if phone.startswith("380") else phone
+
         msg = (
             "✅ <b>Инвойс создан</b>\n\n"
-            display_phone = "0" + phone[2:] if phone.startswith("380") else phone
+            f"Телефон: <code>{html.escape(display_phone)}</code>\n"
             f"Сумма: <b>{html.escape(amount)} {html.escape(CURRENCY)}</b>\n"
             f"Описание: {html.escape(description)}\n"
             f"Статус: <code>{status}</code>\n"
