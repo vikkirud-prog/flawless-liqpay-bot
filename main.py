@@ -35,12 +35,21 @@ def is_allowed(message):
 
 def clean_phone(phone: str) -> str:
     phone = phone.strip()
+
     for symbol in [" ", "-", "(", ")", "."]:
         phone = phone.replace(symbol, "")
+
     if phone.startswith("+"):
         phone = phone[1:]
-    if phone.startswith("0"):
-        phone = "38" + phone
+
+    # Если менеджер ввел украинский номер: 0939325197
+    if phone.startswith("0") and len(phone) == 10:
+        return "38" + phone
+
+    # Если менеджер ввел уже международный формат: 380939325197
+    if phone.startswith("380") and len(phone) == 12:
+        return phone
+
     return phone
 
 def make_signature(data_b64: str) -> str:
@@ -126,9 +135,9 @@ def ask_phone(message):
     bot.send_message(
         message.chat.id,
         "Введите номер телефона клиента в формате:\n"
-        "<code>380XXXXXXXXX</code>\n\n"
-        "Можно также вставить с плюсом: <code>+380XXXXXXXXX</code>\n"
-        "Для отмены напиши: <code>отмена</code>"
+"<code>0939325197</code>\n\n"
+"Можно также вставить с плюсом или 380 — бот сам приведет номер к нужному формату.\n"
+"Для отмены напиши: <code>отмена</code>"
     )
 
 @bot.message_handler(func=lambda message: message.chat.id in user_steps)
@@ -151,8 +160,8 @@ def handle_invoice_steps(message):
     if step == "phone":
         phone = clean_phone(text)
         if not phone.isdigit() or len(phone) < 10 or len(phone) > 15:
-            bot.send_message(chat_id, "Похоже, номер введен неправильно. Пример: <code>380671234567</code>")
-            return
+    bot.send_message(chat_id, "Похоже, номер введен неправильно. Пример: <code>380671234567</code>")
+    return
         data["phone"] = phone
         data["step"] = "amount"
         user_steps[chat_id] = data
@@ -208,7 +217,7 @@ def handle_invoice_steps(message):
 
         msg = (
             "✅ <b>Инвойс создан</b>\n\n"
-            f"Телефон: <code>{html.escape(phone)}</code>\n"
+            display_phone = "0" + phone[2:] if phone.startswith("380") else phone
             f"Сумма: <b>{html.escape(amount)} {html.escape(CURRENCY)}</b>\n"
             f"Описание: {html.escape(description)}\n"
             f"Статус: <code>{status}</code>\n"
