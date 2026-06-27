@@ -1,25 +1,30 @@
-# Flawless LiqPay Invoice Phone Bot
+# Flawless LiqPay Webhook Bot
 
-Telegram-бот для создания LiqPay-инвойсов по номеру телефона клиента.
+Telegram-бот для создания LiqPay-инвойсов. Версия для Render Web Service через Webhook.
 
-## Как работает
+## Render settings
 
-1. Менеджер нажимает **Создать инвойс**.
-2. Вводит номер телефона клиента.
-3. Вводит сумму.
-4. Вводит описание заказа.
-5. Бот создает инвойс через LiqPay API action `invoice_send`.
-
-## Переменные окружения в Render
+Build Command:
 
 ```text
-BOT_TOKEN=токен_бота_из_BotFather
-LIQPAY_PUBLIC_KEY=публичный_ключ_LiqPay
-LIQPAY_PRIVATE_KEY=приватный_ключ_LiqPay
-CURRENCY=UAH
-ALLOWED_USER_IDS=твой_telegram_id
+pip install -r requirements.txt
 ```
 
-`ALLOWED_USER_IDS` можно оставить пустым, но безопаснее указать свой Telegram ID.
+Start Command:
 
-Чтобы узнать ID, нажми в боте **Мой Telegram ID** или отправь `/id`.
+```text
+gunicorn main:app --bind 0.0.0.0:$PORT
+```
+
+Environment Variables:
+
+```text
+BOT_TOKEN=токен Telegram-бота
+LIQPAY_PUBLIC_KEY=публичный ключ LiqPay
+LIQPAY_PRIVATE_KEY=приватный ключ LiqPay
+CURRENCY=UAH
+ALLOWED_USER_IDS=твой Telegram ID
+WEBHOOK_URL=https://flawless-liqpay-bot.onrender.com
+```
+
+`WEBHOOK_URL` должен быть адресом твоего Web Service в Render без слеша в конце.

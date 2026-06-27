@@ -6,20 +6,25 @@ import hashlib
 import html
 import requests
 import telebot
-from telebot import types
+from flask import Flask, request
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 LIQPAY_PUBLIC_KEY = os.getenv("LIQPAY_PUBLIC_KEY")
 LIQPAY_PRIVATE_KEY = os.getenv("LIQPAY_PRIVATE_KEY")
 CURRENCY = os.getenv("CURRENCY", "UAH")
 ALLOWED_USER_IDS = os.getenv("ALLOWED_USER_IDS", "").strip()
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").rstrip("/")
+PORT = int(os.getenv("PORT", "10000"))
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is missing")
 if not LIQPAY_PUBLIC_KEY or not LIQPAY_PRIVATE_KEY:
     raise RuntimeError("LIQPAY_PUBLIC_KEY or LIQPAY_PRIVATE_KEY is missing")
+if not WEBHOOK_URL:
+    raise RuntimeError("WEBHOOK_URL is missing")
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
+app = Flask(__name__)
 user_steps = {}
 
 def is_allowed(message):
@@ -66,7 +71,6 @@ def liqpay_request(params: dict) -> dict:
 
 def create_invoice(phone: str, amount: str, description: str) -> dict:
     order_id = f"flawless_{int(time.time())}"
-
     params = {
         "version": 3,
         "public_key": LIQPAY_PUBLIC_KEY,
@@ -78,13 +82,12 @@ def create_invoice(phone: str, amount: str, description: str) -> dict:
         "phone": phone,
         "language": "uk",
     }
-
     return liqpay_request(params)
 
 def main_menu():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(types.KeyboardButton("Создать инвойс"))
-    markup.add(types.KeyboardButton("Мой Telegram ID"))
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(telebot.types.KeyboardButton("Создать инвойс"))
+    markup.add(telebot.types.KeyboardButton("Мой Telegram ID"))
     return markup
 
 @bot.message_handler(commands=["start"])
@@ -92,7 +95,6 @@ def start(message):
     if not is_allowed(message):
         bot.reply_to(message, "⛔ У тебя нет доступа к этому боту.")
         return
-
     bot.send_message(
         message.chat.id,
         "Привет! Я бот Flawless для создания LiqPay-инвойсов.\n\n"
@@ -120,7 +122,6 @@ def ask_phone(message):
     if not is_allowed(message):
         bot.reply_to(message, "⛔ У тебя нет доступа к этому боту.")
         return
-
     user_steps[message.chat.id] = {"step": "phone"}
     bot.send_message(
         message.chat.id,
@@ -149,15 +150,9 @@ def handle_invoice_steps(message):
 
     if step == "phone":
         phone = clean_phone(text)
-
         if not phone.isdigit() or len(phone) < 10 or len(phone) > 15:
-            bot.send_message(
-                chat_id,
-                "Похоже, номер введен неправильно. Попробуй еще раз.\n"
-                "Пример: <code>380671234567</code>"
-            )
+            bot.send_message(chat_id, "Похоже, номер введен неправильно. Пример: <code>380671234567</code>")
             return
-
         data["phone"] = phone
         data["step"] = "amount"
         user_steps[chat_id] = data
@@ -174,11 +169,7 @@ def handle_invoice_steps(message):
             bot.send_message(chat_id, "Сумма должна быть числом. Например: <code>2490</code>")
             return
 
-        if amount_float.is_integer():
-            amount = str(int(amount_float))
-        else:
-            amount = f"{amount_float:.2f}"
-
+        amount = str(int(amount_float)) if amount_float.is_integer() else f"{amount_float:.2f}"
         data["amount"] = amount
         data["step"] = "description"
         user_steps[chat_id] = data
@@ -191,10 +182,7 @@ def handle_invoice_steps(message):
         return
 
     if step == "description":
-        description = text
-        if description == "-":
-            description = "Оплата заказа Flawless"
-
+        description = text if text != "-" else "Оплата заказа Flawless"
         phone = data["phone"]
         amount = data["amount"]
 
@@ -204,37 +192,29 @@ def handle_invoice_steps(message):
             result = create_invoice(phone=phone, amount=amount, description=description)
         except Exception as e:
             user_steps.pop(chat_id, None)
-            safe_error = html.escape(str(e))
             bot.send_message(
                 chat_id,
                 "❌ Не получилось создать инвойс.\n\n"
-                f"Ошибка: <code>{safe_error}</code>\n\n"
-                "Проверь ключи LiqPay в Render и доступность API.",
+                f"Ошибка: <code>{html.escape(str(e))}</code>\n\n"
+                "Проверь ключи LiqPay и доступность API.",
                 reply_markup=main_menu()
             )
             return
 
         user_steps.pop(chat_id, None)
-
         status = html.escape(str(result.get("status", "unknown")))
         href = result.get("href") or result.get("url") or result.get("checkout_url")
         invoice_id = result.get("invoice_id") or result.get("order_id") or result.get("id")
 
-        safe_description = html.escape(description)
-        safe_phone = html.escape(phone)
-        safe_amount = html.escape(amount)
-
         msg = (
             "✅ <b>Инвойс создан</b>\n\n"
-            f"Телефон: <code>{safe_phone}</code>\n"
-            f"Сумма: <b>{safe_amount} {html.escape(CURRENCY)}</b>\n"
-            f"Описание: {safe_description}\n"
+            f"Телефон: <code>{html.escape(phone)}</code>\n"
+            f"Сумма: <b>{html.escape(amount)} {html.escape(CURRENCY)}</b>\n"
+            f"Описание: {html.escape(description)}\n"
             f"Статус: <code>{status}</code>\n"
         )
-
         if invoice_id:
             msg += f"ID: <code>{html.escape(str(invoice_id))}</code>\n"
-
         if href:
             msg += f"\nСсылка на оплату:\n{html.escape(str(href))}"
         else:
@@ -247,13 +227,35 @@ def fallback(message):
     if not is_allowed(message):
         bot.reply_to(message, "⛔ У тебя нет доступа к этому боту.")
         return
-
     bot.send_message(
         message.chat.id,
         "Я умею создавать инвойсы LiqPay.\nНажми <b>Создать инвойс</b> или отправь /invoice.",
         reply_markup=main_menu()
     )
 
+@app.route("/", methods=["GET"])
+def index():
+    return "Flawless LiqPay Telegram bot is running", 200
+
+@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+def telegram_webhook():
+    if request.headers.get("content-type") == "application/json":
+        update = telebot.types.Update.de_json(request.get_data().decode("utf-8"))
+        bot.process_new_updates([update])
+        return "", 200
+    return "Unsupported Media Type", 415
+
+def setup_webhook():
+    webhook_full_url = f"{WEBHOOK_URL}/{BOT_TOKEN}"
+    bot.remove_webhook()
+    time.sleep(0.5)
+    success = bot.set_webhook(url=webhook_full_url)
+    if not success:
+        raise RuntimeError("Telegram webhook setup failed")
+    print("Webhook set successfully")
+
+setup_webhook()
+
 if __name__ == "__main__":
-    print("Flawless LiqPay bot started")
-    bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
+    print(f"Flawless LiqPay webhook bot started on port {PORT}")
+    app.run(host="0.0.0.0", port=PORT)

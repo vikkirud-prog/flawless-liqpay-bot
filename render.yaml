@@ -1,10 +1,10 @@
 services:
-  - type: worker
-    name: flawless-liqpay-invoice-bot
+  - type: web
+    name: flawless-liqpay-bot
     env: python
-    plan: starter
+    plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
+    startCommand: gunicorn main:app --bind 0.0.0.0:$PORT
     envVars:
       - key: BOT_TOKEN
         sync: false
@@ -15,4 +15,6 @@ services:
       - key: CURRENCY
         value: UAH
       - key: ALLOWED_USER_IDS
+        sync: false
+      - key: WEBHOOK_URL
         sync: false
