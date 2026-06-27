@@ -28,11 +28,7 @@ app = Flask(__name__)
 user_steps = {}
 
 def is_allowed(message):
-    if not ALLOWED_USER_IDS:
         return True
-    allowed = [x.strip() for x in ALLOWED_USER_IDS.split(",") if x.strip()]
-    return str(message.from_user.id) in allowed
-
 def clean_phone(phone: str) -> str:
     phone = phone.strip()
 
