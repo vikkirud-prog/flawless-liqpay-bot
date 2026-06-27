@@ -160,8 +160,8 @@ def handle_invoice_steps(message):
     if step == "phone":
         phone = clean_phone(text)
         if not phone.isdigit() or len(phone) < 10 or len(phone) > 15:
-    bot.send_message(chat_id, "Похоже, номер введен неправильно. Пример: <code>380671234567</code>")
-    return
+          bot.send_message(chat_id, "Похоже, номер введен неправильно. Пример: <code>380671234567</code>")
+          return
         data["phone"] = phone
         data["step"] = "amount"
         user_steps[chat_id] = data
