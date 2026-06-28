@@ -673,13 +673,25 @@ def handle_invoice_steps(message):
                 else str(href)
             )
 
-            msg += f"\n🔗 Ссылка на оплату:\n{html.escape(short_link)}"
-
         else:
 
             msg += "\nLiqPay отправил счет клиенту по телефону, но ссылку в ответе не вернул."
 
         bot.send_message(chat_id, msg, reply_markup=main_menu())
+
+        if href:
+
+            client_message = (
+                "Ваше замовлення готове до оплати 🌸\n"
+                "Оплатити можна за посиланням:\n"
+                f"{short_link}"
+            )
+
+            bot.send_message(
+                chat_id,
+                client_message,
+                disable_web_page_preview=True,
+            )
 
 @bot.message_handler(func=lambda message: True)
 
