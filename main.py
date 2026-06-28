@@ -216,4 +216,7 @@ def handle_invoice_steps(message):
 
     text = (message.text or "").strip()
 
-    if text.
+    if text.lower() in ["/cancel", "отмена", "скасувати", "cancel"]:
+    user_steps.pop(chat_id, None)
+    bot.send_message(chat_id, "Ок, создание инвойса отменено.", reply_markup=main_menu())
+    return
