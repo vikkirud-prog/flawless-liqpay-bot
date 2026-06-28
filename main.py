@@ -12,6 +12,8 @@ import hmac
 
 import html
 
+import re
+
 import secrets
 
 import requests
@@ -123,15 +125,7 @@ def require_access(message) -> bool:
 
 def clean_phone(phone: str) -> str:
 
-    phone = phone.strip()
-
-    for symbol in [" ", "-", "(", ")", "."]:
-
-        phone = phone.replace(symbol, "")
-
-    if phone.startswith("+"):
-
-        phone = phone[1:]
+    phone = re.sub(r"\D", "", phone)
 
     if phone.startswith("0") and len(phone) == 10:
 
@@ -142,6 +136,28 @@ def clean_phone(phone: str) -> str:
         return phone
 
     return phone
+
+def extract_phone(text: str):
+
+    phone_pattern = re.compile(
+        r"(?<!\d)(?:\+?38[\s().-]*)?0(?:[\s().-]*\d){9}(?!\d)"
+    )
+
+    phones = []
+
+    for match in phone_pattern.finditer(text):
+
+        phone = clean_phone(match.group())
+
+        if phone not in phones:
+
+            phones.append(phone)
+
+    if len(phones) == 1:
+
+        return phones[0]
+
+    return None
 
 def make_signature(data_b64: str) -> str:
 
@@ -457,7 +473,10 @@ def ask_phone(message):
 
         "<code>0939325197</code>\n\n"
 
-        "Можно с плюсом или 380 — бот сам исправит.\n"
+        "Или вставьте целиком реквизиты Новой почты — "
+        "бот сам найдет в них номер.\n\n"
+
+        "Можно с плюсом, пробелами или 380 — бот сам исправит.\n"
 
         "Для отмены напиши: <code>отмена</code>"
 
@@ -485,11 +504,16 @@ def handle_invoice_steps(message):
 
     if step == "phone":
 
-        phone = clean_phone(text)
+        phone = extract_phone(text)
 
-        if not phone.isdigit() or len(phone) < 10 or len(phone) > 15:
+        if not phone:
 
-            bot.send_message(chat_id, "Похоже, номер введен неправильно. Пример: <code>380671234567</code>")
+            bot.send_message(
+                chat_id,
+                "Не получилось найти один номер телефона.\n"
+                "Проверьте реквизиты или отправьте номер отдельно, например: "
+                "<code>380671234567</code>",
+            )
 
             return
 
