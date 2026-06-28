@@ -383,11 +383,28 @@ def short_link_redirect(code):
     liqpay_url = short_links.get(code)
 
     if not liqpay_url:
-
         return "Ссылка не найдена или уже недействительна", 404
 
-    return redirect(liqpay_url, code=302)
+    user_agent = request.headers.get("User-Agent", "").lower()
 
+    if (
+        "instagram" in user_agent
+        or "facebookexternalhit" in user_agent
+        or "whatsapp" in user_agent
+        or "telegrambot" in user_agent
+    ):
+        return """
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title></title>
+<meta name="robots" content="noindex,nofollow">
+</head>
+<body></body>
+</html>
+"""
+    return redirect(liqpay_url, code=302)
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 
 def telegram_webhook():
