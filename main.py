@@ -16,7 +16,7 @@ import requests
 
 import telebot
 
-from flask import Flask, request, redirect
+from flask import Flask, request, render_template_string
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
@@ -386,7 +386,53 @@ def short_link_redirect(code):
 
         return "Ссылка не найдена или уже недействительна", 404
 
-    return redirect(liqpay_url, code=302)
+    page = render_template_string(
+        """<!doctype html>
+<html lang="uk">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Оплата заказа Flawless</title>
+    <meta name="description" content="Безпечна оплата замовлення через LiqPay">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Оплата заказа Flawless">
+    <meta property="og:description" content="Безпечна оплата замовлення через LiqPay">
+    <meta property="og:url" content="{{ request.url }}">
+    <meta name="twitter:card" content="summary">
+    <meta name="robots" content="noindex, nofollow">
+    <style>
+        body {
+            align-items: center;
+            background: #fff;
+            color: #171717;
+            display: flex;
+            font-family: Arial, sans-serif;
+            justify-content: center;
+            margin: 0;
+            min-height: 100vh;
+            text-align: center;
+        }
+        main { padding: 24px; }
+        a { color: #171717; }
+    </style>
+</head>
+<body>
+    <main>
+        <p>Переходимо до безпечної оплати через LiqPay…</p>
+        <p><a href="{{ liqpay_url }}">Відкрити сторінку оплати</a></p>
+    </main>
+    <script>
+        window.location.replace({{ liqpay_url|tojson }});
+    </script>
+</body>
+</html>""",
+        liqpay_url=liqpay_url,
+    )
+
+    return page, 200, {
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
 
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 
@@ -425,4 +471,3 @@ if __name__ == "__main__":
     print(f"Flawless LiqPay bot запущен на порту {PORT}")
 
     app.run(host="0.0.0.0", port=PORT)
-
