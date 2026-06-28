@@ -8,6 +8,8 @@ import base64
 
 import hashlib
 
+import hmac
+
 import html
 
 import secrets
@@ -15,6 +17,8 @@ import secrets
 import requests
 
 import telebot
+
+import psycopg
 
 from flask import Flask, request, redirect
 
@@ -27,6 +31,14 @@ LIQPAY_PRIVATE_KEY = os.getenv("LIQPAY_PRIVATE_KEY")
 CURRENCY = os.getenv("CURRENCY", "UAH")
 
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").rstrip("/")
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+ALLOWED_USER_IDS = {
+    int(user_id.strip())
+    for user_id in os.getenv("ALLOWED_USER_IDS", "").split(",")
+    if user_id.strip().isdigit()
+}
 
 PORT = int(os.getenv("PORT", "10000"))
 
@@ -44,13 +56,70 @@ if not WEBHOOK_URL:
 
     raise RuntimeError("WEBHOOK_URL is missing")
 
+if not DATABASE_URL:
+
+    raise RuntimeError("DATABASE_URL is missing")
+
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
 app = Flask(__name__)
 
 user_steps = {}
 
-short_links = {}
+def get_db():
+
+    return psycopg.connect(DATABASE_URL)
+
+def init_db():
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS invoices (
+                    order_id TEXT PRIMARY KEY,
+                    invoice_id TEXT,
+                    phone TEXT NOT NULL,
+                    amount NUMERIC(12, 2) NOT NULL,
+                    currency TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'unpaid',
+                    href TEXT,
+                    short_code TEXT UNIQUE,
+                    created_by BIGINT NOT NULL,
+                    created_by_name TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+
+            cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS invoices_created_at_idx
+                ON invoices (created_at DESC)
+                """
+            )
+
+def is_allowed(user_id: int) -> bool:
+
+    return not ALLOWED_USER_IDS or user_id in ALLOWED_USER_IDS
+
+def require_access(message) -> bool:
+
+    if is_allowed(message.from_user.id):
+
+        return True
+
+    bot.send_message(
+        message.chat.id,
+        "У вас нет доступа к этому боту.\n"
+        f"Ваш Telegram ID: <code>{message.from_user.id}</code>",
+    )
+
+    return False
 
 def clean_phone(phone: str) -> str:
 
@@ -114,7 +183,7 @@ def liqpay_request(params: dict) -> dict:
 
     return result
 
-def create_invoice(phone: str, amount: str, description: str) -> dict:
+def create_invoice(phone: str, amount: str, description: str) -> tuple[str, dict]:
 
     order_id = f"flawless_{int(time.time())}"
 
@@ -138,17 +207,107 @@ def create_invoice(phone: str, amount: str, description: str) -> dict:
 
         "language": "uk",
 
+        "server_url": f"{WEBHOOK_URL}/liqpay/callback",
+
     }
 
-    return liqpay_request(params)
+    return order_id, liqpay_request(params)
 
-def make_short_link(original_url: str) -> str:
+def make_short_code() -> str:
 
-    code = secrets.token_urlsafe(6).replace("-", "").replace("_", "")[:8]
+    return secrets.token_urlsafe(6).replace("-", "").replace("_", "")[:8]
 
-    short_links[code] = original_url
+def make_short_link(code: str) -> str:
 
     return f"{PAY_DOMAIN}/{code}"
+
+def save_invoice(
+    order_id: str,
+    invoice_id,
+    phone: str,
+    amount: str,
+    description: str,
+    href,
+    short_code,
+    created_by: int,
+    created_by_name: str,
+):
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                INSERT INTO invoices (
+                    order_id, invoice_id, phone, amount, currency,
+                    description, status, href, short_code,
+                    created_by, created_by_name
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, 'unpaid', %s, %s, %s, %s)
+                """,
+                (
+                    order_id,
+                    str(invoice_id) if invoice_id else None,
+                    phone,
+                    amount,
+                    CURRENCY,
+                    description,
+                    str(href) if href else None,
+                    short_code,
+                    created_by,
+                    created_by_name,
+                ),
+            )
+
+def get_invoice_url(code: str):
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                "SELECT href FROM invoices WHERE short_code = %s",
+                (code,),
+            )
+
+            row = cursor.fetchone()
+
+    return row[0] if row else None
+
+def get_recent_invoices(limit: int = 10):
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                SELECT order_id, phone, amount, currency, description,
+                       status, short_code, created_by_name, created_at
+                FROM invoices
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+
+            return cursor.fetchall()
+
+def status_label(status: str) -> str:
+
+    labels = {
+        "unpaid": "🕓 Ожидает оплаты",
+        "invoice_wait": "🕓 Ожидает оплаты",
+        "wait_accept": "🕓 Ожидает оплаты",
+        "processing": "🕓 Обрабатывается",
+        "success": "✅ Оплачен",
+        "failure": "❌ Не оплачен",
+        "error": "❌ Ошибка",
+        "reversed": "↩️ Возврат",
+    }
+
+    return labels.get(status, f"ℹ️ {status}")
 
 def main_menu():
 
@@ -156,11 +315,17 @@ def main_menu():
 
     markup.add(telebot.types.KeyboardButton("Создать инвойс"))
 
+    markup.add(telebot.types.KeyboardButton("История"))
+
     return markup
 
 @bot.message_handler(commands=["start"])
 
 def start(message):
+
+    if not require_access(message):
+
+        return
 
     bot.send_message(
 
@@ -178,13 +343,107 @@ def start(message):
 
 def invoice_command(message):
 
+    if not require_access(message):
+
+        return
+
     ask_phone(message)
 
 @bot.message_handler(func=lambda message: message.text == "Создать инвойс")
 
 def invoice_button(message):
 
+    if not require_access(message):
+
+        return
+
     ask_phone(message)
+
+@bot.message_handler(commands=["id"])
+
+def show_telegram_id(message):
+
+    bot.send_message(
+        message.chat.id,
+        f"Ваш Telegram ID: <code>{message.from_user.id}</code>",
+    )
+
+@bot.message_handler(commands=["history"])
+
+def history_command(message):
+
+    show_history(message)
+
+@bot.message_handler(func=lambda message: message.text == "История")
+
+def history_button(message):
+
+    show_history(message)
+
+def show_history(message):
+
+    if not require_access(message):
+
+        return
+
+    invoices = get_recent_invoices()
+
+    if not invoices:
+
+        bot.send_message(message.chat.id, "История инвойсов пока пустая.")
+
+        return
+
+    messages = []
+
+    current_message = "📋 <b>Последние инвойсы</b>"
+
+    for (
+        order_id,
+        phone,
+        amount,
+        currency,
+        description,
+        status,
+        short_code,
+        created_by_name,
+        created_at,
+    ) in invoices:
+
+        display_phone = "0" + phone[2:] if phone.startswith("380") else phone
+        payment_link = make_short_link(short_code) if short_code else None
+
+        item = (
+            f"\n<b>{created_at.astimezone().strftime('%d.%m.%Y %H:%M')}</b>\n"
+            f"{status_label(status)}\n"
+            f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
+            f"Телефон: <code>{html.escape(display_phone)}</code>\n"
+            f"Описание: {html.escape(description)}\n"
+            f"Создал: {html.escape(created_by_name)}\n"
+            f"ID: <code>{html.escape(order_id)}</code>"
+        )
+
+        if payment_link:
+
+            item += f"\n{html.escape(payment_link)}"
+
+        if len(current_message) + len(item) > 3500:
+
+            messages.append(current_message)
+
+            current_message = "📋 <b>Продолжение истории</b>"
+
+        current_message += item
+
+    messages.append(current_message)
+
+    for index, history_message in enumerate(messages):
+
+        bot.send_message(
+            message.chat.id,
+            history_message,
+            reply_markup=main_menu() if index == len(messages) - 1 else None,
+        )
 
 def ask_phone(message):
 
@@ -296,7 +555,11 @@ def handle_invoice_steps(message):
 
         try:
 
-            result = create_invoice(phone=phone, amount=amount, description=description)
+            order_id, result = create_invoice(
+                phone=phone,
+                amount=amount,
+                description=description,
+            )
 
         except Exception as e:
 
@@ -322,7 +585,41 @@ def handle_invoice_steps(message):
 
         href = result.get("href") or result.get("url") or result.get("checkout_url")
 
-        invoice_id = result.get("invoice_id") or result.get("order_id") or result.get("id")
+        invoice_id = result.get("invoice_id") or result.get("id")
+
+        short_code = make_short_code() if href else None
+
+        creator_name = (
+            f"@{message.from_user.username}"
+            if message.from_user.username
+            else message.from_user.first_name
+        )
+
+        invoice_saved = True
+
+        try:
+
+            save_invoice(
+                order_id=order_id,
+                invoice_id=invoice_id,
+                phone=phone,
+                amount=amount,
+                description=description,
+                href=href,
+                short_code=short_code,
+                created_by=message.from_user.id,
+                created_by_name=creator_name,
+            )
+
+        except Exception as e:
+
+            invoice_saved = False
+
+            bot.send_message(
+                chat_id,
+                "⚠️ Инвойс создан в LiqPay, но не сохранился в истории.\n"
+                f"Ошибка: <code>{html.escape(str(e))}</code>",
+            )
 
         display_phone = "0" + phone[2:] if phone.startswith("380") else phone
 
@@ -346,7 +643,11 @@ def handle_invoice_steps(message):
 
         if href:
 
-            short_link = make_short_link(str(href))
+            short_link = (
+                make_short_link(short_code)
+                if invoice_saved
+                else str(href)
+            )
 
             msg += f"\n🔗 Ссылка на оплату:\n{html.escape(short_link)}"
 
@@ -380,7 +681,7 @@ def index():
 
 def short_link_redirect(code):
 
-    liqpay_url = short_links.get(code)
+    liqpay_url = get_invoice_url(code)
 
     if not liqpay_url:
 
@@ -399,6 +700,77 @@ def short_link_redirect(code):
         return "", 204, {"Cache-Control": "no-store"}
 
     return redirect(liqpay_url, code=302)
+
+@app.route("/liqpay/callback", methods=["POST"])
+
+def liqpay_callback():
+
+    data_b64 = request.form.get("data", "")
+    received_signature = request.form.get("signature", "")
+
+    if not data_b64 or not received_signature:
+
+        return "Missing callback data", 400
+
+    expected_signature = make_signature(data_b64)
+
+    if not hmac.compare_digest(received_signature, expected_signature):
+
+        return "Invalid signature", 403
+
+    try:
+
+        callback_data = json.loads(
+            base64.b64decode(data_b64).decode("utf-8")
+        )
+
+    except Exception:
+
+        return "Invalid callback data", 400
+
+    order_id = str(callback_data.get("order_id", ""))
+    status = str(callback_data.get("status", "unknown"))
+
+    if not order_id:
+
+        return "Missing order_id", 400
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                UPDATE invoices
+                SET status = %s, updated_at = NOW()
+                WHERE order_id = %s
+                RETURNING amount, currency
+                """,
+                (status, order_id),
+            )
+
+            updated_invoice = cursor.fetchone()
+
+    if status == "success" and updated_invoice:
+
+        amount, currency = updated_invoice
+
+        for user_id in ALLOWED_USER_IDS:
+
+            try:
+
+                bot.send_message(
+                    user_id,
+                    "✅ <b>Инвойс оплачен</b>\n"
+                    f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
+                    f"ID: <code>{html.escape(order_id)}</code>",
+                )
+
+            except Exception:
+
+                pass
+
+    return "ok", 200
 
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 
@@ -429,6 +801,8 @@ def setup_webhook():
         raise RuntimeError("Telegram webhook setup failed")
 
     print("Webhook set successfully")
+
+init_db()
 
 setup_webhook()
 
