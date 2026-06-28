@@ -404,7 +404,22 @@ def short_link_redirect(code):
 <body></body>
 </html>
 """
-    return redirect(liqpay_url, code=302)
+   safe_url = html.escape(liqpay_url, quote=True)
+return f"""
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title></title>
+    <meta name="robots" content="noindex,nofollow">
+</head>
+<body>
+    <script>
+        window.location.replace("{safe_url}");
+    </script>
+</body>
+</html>
+"""
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 
 def telegram_webhook():
