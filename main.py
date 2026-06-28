@@ -383,33 +383,11 @@ def short_link_redirect(code):
     liqpay_url = short_links.get(code)
 
     if not liqpay_url:
+
         return "Ссылка не найдена или уже недействительна", 404
-<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title></title>
-<meta name="robots" content="noindex,nofollow">
-</head>
-<body></body>
-</html>
-"""
-   safe_url = html.escape(liqpay_url, quote=True)
-return f"""
-<!doctype html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title></title>
-    <meta name="robots" content="noindex,nofollow">
-</head>
-<body>
-    <script>
-        window.location.replace("{safe_url}");
-    </script>
-</body>
-</html>
-"""
+
+    return redirect(liqpay_url, code=302)
+
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 
 def telegram_webhook():
@@ -447,3 +425,4 @@ if __name__ == "__main__":
     print(f"Flawless LiqPay bot запущен на порту {PORT}")
 
     app.run(host="0.0.0.0", port=PORT)
+
