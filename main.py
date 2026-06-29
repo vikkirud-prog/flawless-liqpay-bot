@@ -1466,6 +1466,16 @@ def liqpay_callback():
 
             try:
 
+                copy_phone_markup = telebot.types.InlineKeyboardMarkup()
+                copy_phone_markup.add(
+                    telebot.types.InlineKeyboardButton(
+                        text=f"📋 Копировать {phone_for_display}",
+                        copy_text=telebot.types.CopyTextButton(
+                            text=phone_for_display,
+                        ),
+                    )
+                )
+
                 bot.send_message(
                     user_id,
                     "✅ <b>Инвойс оплачен</b>\n"
@@ -1473,6 +1483,7 @@ def liqpay_callback():
                     f"Товар: {html.escape(product_names)}\n"
                     f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
                     f"{checkbox_message}",
+                    reply_markup=copy_phone_markup,
                 )
 
             except Exception:
