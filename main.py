@@ -299,7 +299,12 @@ def get_invoice_url(code: str):
         with connection.cursor() as cursor:
 
             cursor.execute(
-                "SELECT href FROM invoices WHERE short_code = %s",
+                """
+                SELECT href
+                FROM invoices
+                WHERE short_code = %s
+                  AND status NOT IN ('cancelled', 'canceled')
+                """,
                 (code,),
             )
 
@@ -326,6 +331,47 @@ def get_recent_invoices(limit: int = 10):
 
             return cursor.fetchall()
 
+def get_invoice_status(order_id: str):
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                "SELECT status FROM invoices WHERE order_id = %s",
+                (order_id,),
+            )
+
+            row = cursor.fetchone()
+
+    return row[0] if row else None
+
+def mark_invoice_cancelled(order_id: str):
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                UPDATE invoices
+                SET status = 'cancelled', updated_at = NOW()
+                WHERE order_id = %s
+                """,
+                (order_id,),
+            )
+
+def cancel_liqpay_invoice(order_id: str) -> dict:
+
+    return liqpay_request(
+        {
+            "version": 3,
+            "public_key": LIQPAY_PUBLIC_KEY,
+            "action": "invoice_cancel",
+            "order_id": order_id,
+        }
+    )
+
 def status_label(status: str) -> str:
 
     labels = {
@@ -337,6 +383,8 @@ def status_label(status: str) -> str:
         "failure": "❌ Не оплачен",
         "error": "❌ Ошибка",
         "reversed": "↩️ Возврат",
+        "cancelled": "🚫 Скасований",
+        "canceled": "🚫 Скасований",
     }
 
     return labels.get(status, f"ℹ️ {status}")
@@ -484,11 +532,134 @@ def show_history(message):
                 ),
             )
         )
+
+        if status in {"unpaid", "invoice_wait", "wait_accept"}:
+
+            copy_markup.add(
+                telebot.types.InlineKeyboardButton(
+                    text="❌ Скасувати інвойс",
+                    callback_data=f"cancel:{order_id}",
+                )
+            )
+
         bot.send_message(
             message.chat.id,
             item,
             reply_markup=copy_markup,
         )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("cancel:"))
+
+def ask_cancel_invoice(call):
+
+    if not is_allowed(call.from_user.id):
+
+        bot.answer_callback_query(call.id, "У вас нет доступа.", show_alert=True)
+
+        return
+
+    order_id = call.data.split(":", 1)[1]
+    status = get_invoice_status(order_id)
+
+    if status not in {"unpaid", "invoice_wait", "wait_accept"}:
+
+        bot.answer_callback_query(
+            call.id,
+            "Этот инвойс уже оплачен или отменён.",
+            show_alert=True,
+        )
+
+        return
+
+    confirm_markup = telebot.types.InlineKeyboardMarkup()
+    confirm_markup.row(
+        telebot.types.InlineKeyboardButton(
+            text="Да, скасувати",
+            callback_data=f"confirm_cancel:{order_id}",
+        ),
+        telebot.types.InlineKeyboardButton(
+            text="Ні, залишити",
+            callback_data="keep_invoice",
+        ),
+    )
+
+    bot.answer_callback_query(call.id)
+    bot.send_message(
+        call.message.chat.id,
+        "Точно скасувати цей інвойс?\n"
+        f"ID: <code>{html.escape(order_id)}</code>",
+        reply_markup=confirm_markup,
+    )
+
+@bot.callback_query_handler(
+    func=lambda call: call.data.startswith("confirm_cancel:")
+)
+
+def confirm_cancel_invoice(call):
+
+    if not is_allowed(call.from_user.id):
+
+        bot.answer_callback_query(call.id, "У вас нет доступа.", show_alert=True)
+
+        return
+
+    order_id = call.data.split(":", 1)[1]
+    status = get_invoice_status(order_id)
+
+    if status not in {"unpaid", "invoice_wait", "wait_accept"}:
+
+        bot.answer_callback_query(
+            call.id,
+            "Этот инвойс уже оплачен или отменён.",
+            show_alert=True,
+        )
+
+        return
+
+    try:
+
+        result = cancel_liqpay_invoice(order_id)
+
+        if result.get("result") != "ok":
+
+            raise RuntimeError(
+                result.get("err_description")
+                or result.get("status")
+                or str(result)
+            )
+
+        mark_invoice_cancelled(order_id)
+
+    except Exception as error:
+
+        bot.answer_callback_query(
+            call.id,
+            "LiqPay не смог отменить инвойс.",
+            show_alert=True,
+        )
+        bot.send_message(
+            call.message.chat.id,
+            "❌ Не получилось отменить инвойс.\n"
+            f"Ошибка: <code>{html.escape(str(error))}</code>",
+        )
+
+        return
+
+    bot.answer_callback_query(call.id, "Инвойс отменён")
+    bot.edit_message_text(
+        "🚫 <b>Інвойс скасовано</b>\n"
+        "Клієнт більше не зможе оплатити це посилання.\n"
+        f"ID: <code>{html.escape(order_id)}</code>",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data == "keep_invoice")
+
+def keep_invoice(call):
+
+    bot.answer_callback_query(call.id, "Инвойс оставлен без изменений")
+    bot.delete_message(call.message.chat.id, call.message.message_id)
 
 def ask_phone(message):
 
