@@ -22,6 +22,8 @@ import telebot
 
 import psycopg
 
+from decimal import Decimal, InvalidOperation
+
 from flask import Flask, request, redirect
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -349,6 +351,20 @@ def main_menu():
 
     return markup
 
+def item_action_menu():
+
+    markup = telebot.types.ReplyKeyboardMarkup(
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+    markup.row(
+        telebot.types.KeyboardButton("➕ Добавить ещё товар"),
+        telebot.types.KeyboardButton("✅ Создать инвойс"),
+    )
+
+    return markup
+
 @bot.message_handler(commands=["start"])
 
 def start(message):
@@ -532,63 +548,146 @@ def handle_invoice_steps(message):
 
         data["phone"] = phone
 
-        data["step"] = "amount"
+        data["items"] = []
 
-        user_steps[chat_id] = data
-
-        bot.send_message(chat_id, "Теперь введите сумму в грн, например:\n<code>2490</code>")
-
-        return
-
-    if step == "amount":
-
-        amount = text.replace(",", ".")
-
-        try:
-
-            amount_float = float(amount)
-
-            if amount_float <= 0:
-
-                raise ValueError
-
-        except ValueError:
-
-            bot.send_message(chat_id, "Сумма должна быть числом. Например: <code>2490</code>")
-
-            return
-
-        amount = str(int(amount_float)) if amount_float.is_integer() else f"{amount_float:.2f}"
-
-        data["amount"] = amount
-
-        data["step"] = "description"
+        data["step"] = "item_name"
 
         user_steps[chat_id] = data
 
         bot.send_message(
-
             chat_id,
-
-            "Введите описание платежа, например:\n"
-
-            "<code>Комбинезон Flawless, размер M, черный</code>\n\n"
-
-            "Или напишите <code>-</code>, если описание не нужно."
-
+            "Введите название первого товара, например:\n"
+            "<code>Комбинезон Flawless, размер M, чёрный</code>",
+            reply_markup=telebot.types.ReplyKeyboardRemove(),
         )
 
         return
 
-    if step == "description":
+    if step == "item_name":
 
-        description = text if text != "-" else "Оплата заказа Flawless"
+        if not text:
+
+            bot.send_message(chat_id, "Введите название товара.")
+
+            return
+
+        data["pending_item_name"] = text
+
+        data["step"] = "item_price"
+
+        user_steps[chat_id] = data
+
+        bot.send_message(
+            chat_id,
+            f"Введите цену товара «{html.escape(text)}» в грн, например:\n"
+            "<code>2490</code>",
+        )
+
+        return
+
+    if step == "item_price":
+
+        price_text = text.replace(" ", "").replace(",", ".")
+
+        try:
+
+            price = Decimal(price_text)
+
+            if price <= 0:
+
+                raise InvalidOperation
+
+        except (InvalidOperation, ValueError):
+
+            bot.send_message(chat_id, "Цена должна быть числом. Например: <code>2490</code>")
+
+            return
+
+        price = price.quantize(Decimal("0.01"))
+
+        price_display = (
+            str(int(price))
+            if price == price.to_integral_value()
+            else f"{price:.2f}"
+        )
+
+        data["items"].append(
+            {
+                "name": data.pop("pending_item_name"),
+                "price": price_display,
+            }
+        )
+
+        data["step"] = "item_action"
+
+        user_steps[chat_id] = data
+
+        items_summary = "\n".join(
+            f"{index}. {html.escape(item['name'])} — "
+            f"<b>{html.escape(item['price'])} UAH</b>"
+            for index, item in enumerate(data["items"], start=1)
+        )
+
+        bot.send_message(
+            chat_id,
+            "Добавлено ✅\n\n"
+            f"{items_summary}\n\n"
+            "Добавить ещё один товар или создать инвойс?",
+            reply_markup=item_action_menu(),
+        )
+
+        return
+
+    if step == "item_action":
+
+        if text == "➕ Добавить ещё товар":
+
+            data["step"] = "item_name"
+
+            user_steps[chat_id] = data
+
+            bot.send_message(
+                chat_id,
+                f"Введите название товара №{len(data['items']) + 1}:",
+                reply_markup=telebot.types.ReplyKeyboardRemove(),
+            )
+
+            return
+
+        if text != "✅ Создать инвойс":
+
+            bot.send_message(
+                chat_id,
+                "Выберите одну из кнопок ниже.",
+                reply_markup=item_action_menu(),
+            )
+
+            return
+
+        total = sum(
+            (Decimal(item["price"]) for item in data["items"]),
+            Decimal("0"),
+        )
+
+        amount = (
+            str(int(total))
+            if total == total.to_integral_value()
+            else f"{total:.2f}"
+        )
+
+        description = "; ".join(
+            f"{index}. {item['name']} — {item['price']} грн"
+            for index, item in enumerate(data["items"], start=1)
+        )
 
         phone = data["phone"]
 
-        amount = data["amount"]
-
-        bot.send_message(chat_id, "Создаю инвойс LiqPay…")
+        bot.send_message(
+            chat_id,
+            f"Общая сумма: <b>{html.escape(amount)} UAH</b>\n"
+            "Создаю инвойс LiqPay…",
+            reply_markup=telebot.types.ReplyKeyboardRemove(),
+        )
 
         try:
 
