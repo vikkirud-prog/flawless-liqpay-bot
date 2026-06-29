@@ -175,6 +175,32 @@ def display_phone(phone: str) -> str:
 
     return digits
 
+def format_product_names(items, description: str) -> str:
+
+    if isinstance(items, str):
+
+        try:
+
+            items = json.loads(items)
+
+        except Exception:
+
+            items = []
+
+    if isinstance(items, list):
+
+        names = [
+            str(item.get("name", "")).strip()
+            for item in items
+            if isinstance(item, dict) and str(item.get("name", "")).strip()
+        ]
+
+        if names:
+
+            return ", ".join(names)
+
+    return description
+
 def extract_phone(text: str):
 
     phone_pattern = re.compile(
@@ -1254,7 +1280,7 @@ def liqpay_callback():
                 UPDATE invoices
                 SET status = %s, updated_at = NOW()
                 WHERE order_id = %s
-                RETURNING amount, currency
+                RETURNING amount, currency, phone, description, items
                 """,
                 (status, order_id),
             )
@@ -1263,7 +1289,9 @@ def liqpay_callback():
 
     if status == "success" and updated_invoice:
 
-        amount, currency = updated_invoice
+        amount, currency, phone, description, items = updated_invoice
+        phone_for_display = display_phone(phone)
+        product_names = format_product_names(items, description)
 
         checkbox_message = ""
         invoice_to_fiscalize = claim_invoice_for_fiscalization(order_id)
@@ -1319,8 +1347,9 @@ def liqpay_callback():
                 bot.send_message(
                     user_id,
                     "✅ <b>Инвойс оплачен</b>\n"
+                    f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
+                    f"Товар: {html.escape(product_names)}\n"
                     f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
-                    f"ID: <code>{html.escape(order_id)}</code>"
                     f"{checkbox_message}",
                 )
 
