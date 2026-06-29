@@ -794,7 +794,7 @@ def handle_invoice_steps(message):
         if href:
 
             client_message = (
-                "Ваше замовлення готове до оплати 🌸\n"
+                "Ваше замовлення сформоване 🌸\n"
                 "Оплатити можна за посиланням:\n"
                 f"{short_link}"
             )
