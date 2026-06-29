@@ -137,6 +137,20 @@ def clean_phone(phone: str) -> str:
 
     return phone
 
+def display_phone(phone: str) -> str:
+
+    digits = re.sub(r"\D", "", phone)
+
+    if digits.startswith("380") and len(digits) == 12:
+
+        return digits[2:]
+
+    if digits.startswith("00") and len(digits) == 11:
+
+        return digits[1:]
+
+    return digits
+
 def extract_phone(text: str):
 
     phone_pattern = re.compile(
@@ -410,9 +424,11 @@ def show_history(message):
 
         return
 
-    messages = []
-
-    current_message = "📋 <b>Последние инвойсы</b>"
+    bot.send_message(
+        message.chat.id,
+        "📋 <b>Последние инвойсы</b>",
+        reply_markup=main_menu(),
+    )
 
     for (
         order_id,
@@ -426,14 +442,14 @@ def show_history(message):
         created_at,
     ) in invoices:
 
-        display_phone = "0" + phone[2:] if phone.startswith("380") else phone
+        phone_for_display = display_phone(phone)
         payment_link = make_short_link(short_code) if short_code else None
 
         item = (
-            f"\n<b>{created_at.astimezone().strftime('%d.%m.%Y %H:%M')}</b>\n"
+            f"<b>{created_at.astimezone().strftime('%d.%m.%Y %H:%M')}</b>\n"
             f"{status_label(status)}\n"
             f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
-            f"Телефон: <code>{html.escape(display_phone)}</code>\n"
+            f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
             f"Описание: {html.escape(description)}\n"
             f"Создал: {html.escape(created_by_name)}\n"
             f"ID: <code>{html.escape(order_id)}</code>"
@@ -443,22 +459,19 @@ def show_history(message):
 
             item += f"\n{html.escape(payment_link)}"
 
-        if len(current_message) + len(item) > 3500:
-
-            messages.append(current_message)
-
-            current_message = "📋 <b>Продолжение истории</b>"
-
-        current_message += item
-
-    messages.append(current_message)
-
-    for index, history_message in enumerate(messages):
-
+        copy_markup = telebot.types.InlineKeyboardMarkup()
+        copy_markup.add(
+            telebot.types.InlineKeyboardButton(
+                text=f"📋 Копировать {phone_for_display}",
+                copy_text=telebot.types.CopyTextButton(
+                    text=phone_for_display,
+                ),
+            )
+        )
         bot.send_message(
             message.chat.id,
-            history_message,
-            reply_markup=main_menu() if index == len(messages) - 1 else None,
+            item,
+            reply_markup=copy_markup,
         )
 
 def ask_phone(message):
@@ -645,13 +658,13 @@ def handle_invoice_steps(message):
                 f"Ошибка: <code>{html.escape(str(e))}</code>",
             )
 
-        display_phone = "0" + phone[2:] if phone.startswith("380") else phone
+        phone_for_display = display_phone(phone)
 
         msg = (
 
             "✅ <b>Инвойс создан</b>\n\n"
 
-            f"Телефон: <code>{html.escape(display_phone)}</code>\n"
+            f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
 
             f"Сумма: <b>{html.escape(amount)} {html.escape(CURRENCY)}</b>\n"
 
