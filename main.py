@@ -16,6 +16,8 @@ import re
 
 import secrets
 
+import uuid
+
 import requests
 
 import telebot
@@ -37,6 +39,14 @@ CURRENCY = os.getenv("CURRENCY", "UAH")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").rstrip("/")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+CHECKBOX_LICENSE_KEY = os.getenv("CHECKBOX_LICENSE_KEY", "")
+
+CHECKBOX_PIN_CODE = os.getenv("CHECKBOX_PIN_CODE", "")
+
+CHECKBOX_TAX_CODE = int(os.getenv("CHECKBOX_TAX_CODE", "8"))
+
+CHECKBOX_API_URL = "https://api.checkbox.ua/api/v1"
 
 ALLOWED_USER_IDS = {
     int(user_id.strip())
@@ -104,6 +114,18 @@ def init_db():
                 """
                 CREATE INDEX IF NOT EXISTS invoices_created_at_idx
                 ON invoices (created_at DESC)
+                """
+            )
+
+            cursor.execute(
+                """
+                ALTER TABLE invoices
+                    ADD COLUMN IF NOT EXISTS items JSONB
+                        NOT NULL DEFAULT '[]'::jsonb,
+                    ADD COLUMN IF NOT EXISTS checkbox_receipt_id UUID,
+                    ADD COLUMN IF NOT EXISTS checkbox_status TEXT,
+                    ADD COLUMN IF NOT EXISTS checkbox_error TEXT,
+                    ADD COLUMN IF NOT EXISTS fiscalized_at TIMESTAMPTZ
                 """
             )
 
@@ -261,6 +283,7 @@ def save_invoice(
     description: str,
     href,
     short_code,
+    items: list,
     created_by: int,
     created_by_name: str,
 ):
@@ -274,9 +297,12 @@ def save_invoice(
                 INSERT INTO invoices (
                     order_id, invoice_id, phone, amount, currency,
                     description, status, href, short_code,
-                    created_by, created_by_name
+                    items, created_by, created_by_name
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, 'unpaid', %s, %s, %s, %s)
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, 'unpaid',
+                    %s, %s, %s::jsonb, %s, %s
+                )
                 """,
                 (
                     order_id,
@@ -287,9 +313,173 @@ def save_invoice(
                     description,
                     str(href) if href else None,
                     short_code,
+                    json.dumps(items, ensure_ascii=False),
                     created_by,
                     created_by_name,
                 ),
+            )
+
+def checkbox_headers(token=None):
+
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "X-Client-Name": "Flawless LiqPay Bot",
+        "X-Client-Version": "1.0",
+        "X-License-Key": CHECKBOX_LICENSE_KEY,
+    }
+
+    if token:
+
+        headers["Authorization"] = f"Bearer {token}"
+
+    return headers
+
+def checkbox_signin() -> str:
+
+    if not CHECKBOX_LICENSE_KEY or not CHECKBOX_PIN_CODE:
+
+        raise RuntimeError("Checkbox integration is not configured")
+
+    response = requests.post(
+        f"{CHECKBOX_API_URL}/cashier/signinPinCode",
+        headers=checkbox_headers(),
+        json={"pin_code": CHECKBOX_PIN_CODE},
+        timeout=20,
+    )
+
+    result = response.json()
+
+    if response.status_code >= 400 or not result.get("access_token"):
+
+        raise RuntimeError(
+            result.get("message")
+            or result.get("detail")
+            or "Checkbox authorization failed"
+        )
+
+    return result["access_token"]
+
+def checkbox_good_code(name: str) -> str:
+
+    return hashlib.sha256(name.strip().lower().encode("utf-8")).hexdigest()[:16]
+
+def fiscalize_checkbox_receipt(order_id: str, items: list, amount) -> str:
+
+    receipt_id = str(
+        uuid.uuid5(uuid.NAMESPACE_URL, f"flawless-checkbox:{order_id}")
+    )
+
+    goods = []
+
+    for item in items:
+
+        price_cents = int(
+            (Decimal(str(item["price"])) * 100).quantize(Decimal("1"))
+        )
+
+        goods.append(
+            {
+                "good": {
+                    "code": checkbox_good_code(item["name"]),
+                    "name": item["name"][:255],
+                    "price": price_cents,
+                    "tax": [CHECKBOX_TAX_CODE],
+                },
+                "quantity": 1000,
+                "is_return": False,
+            }
+        )
+
+    total_cents = int(
+        (Decimal(str(amount)) * 100).quantize(Decimal("1"))
+    )
+
+    token = checkbox_signin()
+    response = requests.post(
+        f"{CHECKBOX_API_URL}/receipts/sell",
+        headers=checkbox_headers(token),
+        json={
+            "id": receipt_id,
+            "goods": goods,
+            "payments": [
+                {
+                    "type": "CASHLESS",
+                    "label": "Картка",
+                    "value": total_cents,
+                }
+            ],
+        },
+        timeout=30,
+    )
+
+    try:
+
+        result = response.json()
+
+    except Exception:
+
+        result = {}
+
+    if response.status_code >= 400:
+
+        raise RuntimeError(
+            result.get("message")
+            or result.get("detail")
+            or response.text[:300]
+            or "Checkbox receipt creation failed"
+        )
+
+    return receipt_id
+
+def claim_invoice_for_fiscalization(order_id: str):
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                UPDATE invoices
+                SET checkbox_status = 'processing',
+                    checkbox_error = NULL,
+                    updated_at = NOW()
+                WHERE order_id = %s
+                  AND checkbox_receipt_id IS NULL
+                  AND COALESCE(checkbox_status, 'new')
+                      IN ('new', 'error')
+                RETURNING items, amount
+                """,
+                (order_id,),
+            )
+
+            return cursor.fetchone()
+
+def mark_checkbox_receipt(
+    order_id: str,
+    status: str,
+    receipt_id=None,
+    error=None,
+):
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                UPDATE invoices
+                SET checkbox_status = %s,
+                    checkbox_receipt_id = COALESCE(%s, checkbox_receipt_id),
+                    checkbox_error = %s,
+                    fiscalized_at = CASE
+                        WHEN %s = 'created' THEN NOW()
+                        ELSE fiscalized_at
+                    END,
+                    updated_at = NOW()
+                WHERE order_id = %s
+                """,
+                (status, receipt_id, error, status, order_id),
             )
 
 def get_invoice_url(code: str):
@@ -914,6 +1104,7 @@ def handle_invoice_steps(message):
                 description=description,
                 href=href,
                 short_code=short_code,
+                items=data["items"],
                 created_by=message.from_user.id,
                 created_by_name=creator_name,
             )
@@ -1074,6 +1265,53 @@ def liqpay_callback():
 
         amount, currency = updated_invoice
 
+        checkbox_message = ""
+        invoice_to_fiscalize = claim_invoice_for_fiscalization(order_id)
+
+        if invoice_to_fiscalize:
+
+            items, invoice_amount = invoice_to_fiscalize
+
+            if items:
+
+                try:
+
+                    receipt_id = fiscalize_checkbox_receipt(
+                        order_id,
+                        items,
+                        invoice_amount,
+                    )
+                    mark_checkbox_receipt(
+                        order_id,
+                        "created",
+                        receipt_id=receipt_id,
+                    )
+                    checkbox_message = "\n🧾 Чек Checkbox створено автоматично."
+
+                except Exception as error:
+
+                    mark_checkbox_receipt(
+                        order_id,
+                        "error",
+                        error=str(error)[:500],
+                    )
+                    checkbox_message = (
+                        "\n⚠️ Чек Checkbox не створено автоматично.\n"
+                        f"Ошибка: <code>{html.escape(str(error))}</code>"
+                    )
+
+            else:
+
+                mark_checkbox_receipt(
+                    order_id,
+                    "error",
+                    error="Invoice has no structured items",
+                )
+                checkbox_message = (
+                    "\n⚠️ Чек Checkbox не створено: "
+                    "в старому інвойсі немає списку товарів."
+                )
+
         for user_id in ALLOWED_USER_IDS:
 
             try:
@@ -1082,7 +1320,8 @@ def liqpay_callback():
                     user_id,
                     "✅ <b>Инвойс оплачен</b>\n"
                     f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
-                    f"ID: <code>{html.escape(order_id)}</code>",
+                    f"ID: <code>{html.escape(order_id)}</code>"
+                    f"{checkbox_message}",
                 )
 
             except Exception:
