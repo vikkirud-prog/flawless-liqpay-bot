@@ -4,6 +4,8 @@ import json
 
 import time
 
+import threading
+
 import base64
 
 import hashlib
@@ -386,6 +388,45 @@ def checkbox_signin() -> str:
 
     return result["access_token"]
 
+def checkbox_shift_is_open() -> bool:
+
+    if not CHECKBOX_LICENSE_KEY or not CHECKBOX_PIN_CODE:
+
+        return False
+
+    token = checkbox_signin()
+    response = requests.get(
+        f"{CHECKBOX_API_URL}/cashier/shift",
+        headers=checkbox_headers(token),
+        timeout=20,
+    )
+
+    if response.status_code == 404:
+
+        return False
+
+    try:
+
+        result = response.json()
+
+    except Exception:
+
+        response.raise_for_status()
+        return False
+
+    if response.status_code >= 400:
+
+        return False
+
+    shift = result.get("shift") if isinstance(result, dict) else None
+    shift_status = (
+        shift.get("status")
+        if isinstance(shift, dict)
+        else result.get("status") if isinstance(result, dict) else None
+    )
+
+    return str(shift_status).upper() == "OPENED"
+
 def checkbox_good_code(name: str) -> str:
 
     return hashlib.sha256(name.strip().lower().encode("utf-8")).hexdigest()[:16]
@@ -507,6 +548,87 @@ def mark_checkbox_receipt(
                 """,
                 (status, receipt_id, error, status, order_id),
             )
+
+def get_pending_checkbox_invoices(limit: int = 50):
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                SELECT order_id
+                FROM invoices
+                WHERE status = 'success'
+                  AND checkbox_receipt_id IS NULL
+                  AND checkbox_status = 'error'
+                ORDER BY updated_at
+                LIMIT %s
+                """,
+                (limit,),
+            )
+
+            return [row[0] for row in cursor.fetchall()]
+
+def retry_pending_checkbox_receipts():
+
+    if not checkbox_shift_is_open():
+
+        return
+
+    for order_id in get_pending_checkbox_invoices():
+
+        invoice_to_fiscalize = claim_invoice_for_fiscalization(order_id)
+
+        if not invoice_to_fiscalize:
+
+            continue
+
+        items, invoice_amount = invoice_to_fiscalize
+
+        if not items:
+
+            mark_checkbox_receipt(
+                order_id,
+                "error",
+                error="Invoice has no structured items",
+            )
+            continue
+
+        try:
+
+            receipt_id = fiscalize_checkbox_receipt(
+                order_id,
+                items,
+                invoice_amount,
+            )
+            mark_checkbox_receipt(
+                order_id,
+                "created",
+                receipt_id=receipt_id,
+            )
+
+        except Exception as error:
+
+            mark_checkbox_receipt(
+                order_id,
+                "error",
+                error=str(error)[:500],
+            )
+
+def checkbox_retry_worker():
+
+    while True:
+
+        try:
+
+            retry_pending_checkbox_receipts()
+
+        except Exception as error:
+
+            print(f"Checkbox retry failed: {error}")
+
+        time.sleep(60)
 
 def get_invoice_url(code: str):
 
@@ -1390,6 +1512,12 @@ def setup_webhook():
     print("Webhook set successfully")
 
 init_db()
+
+threading.Thread(
+    target=checkbox_retry_worker,
+    name="checkbox-retry",
+    daemon=True,
+).start()
 
 setup_webhook()
 
