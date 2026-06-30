@@ -50,6 +50,10 @@ CHECKBOX_TAX_CODE = int(os.getenv("CHECKBOX_TAX_CODE", "8"))
 
 CHECKBOX_API_URL = "https://api.checkbox.ua/api/v1"
 
+KEYCRM_API_KEY = os.getenv("KEYCRM_API_KEY", "")
+
+KEYCRM_API_URL = "https://openapi.keycrm.app/v1"
+
 ALLOWED_USER_IDS = {
     int(user_id.strip())
     for user_id in os.getenv("ALLOWED_USER_IDS", "").split(",")
@@ -1440,6 +1444,226 @@ def fallback(message):
         reply_markup=main_menu()
 
     )
+
+def keycrm_request(path: str, params=None):
+
+    if not KEYCRM_API_KEY:
+
+        raise RuntimeError("KEYCRM_API_KEY is missing")
+
+    response = requests.get(
+        f"{KEYCRM_API_URL}/{path.lstrip('/')}",
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {KEYCRM_API_KEY}",
+        },
+        params=params or {},
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.json()
+
+def keycrm_product_image(product: dict) -> str:
+
+    for field in ("image", "image_url", "picture", "picture_url", "thumbnail"):
+
+        value = product.get(field)
+
+        if isinstance(value, str) and value.startswith("http"):
+
+            return value
+
+        if isinstance(value, dict):
+
+            url = value.get("url") or value.get("src")
+
+            if isinstance(url, str) and url.startswith("http"):
+
+                return url
+
+    for field in ("images", "pictures", "photos"):
+
+        for image in product.get(field) or []:
+
+            if isinstance(image, str) and image.startswith("http"):
+
+                return image
+
+            if isinstance(image, dict):
+
+                url = image.get("url") or image.get("src") or image.get("thumbnail")
+
+                if isinstance(url, str) and url.startswith("http"):
+
+                    return url
+
+    return ""
+
+def keycrm_number(value) -> float:
+
+    try:
+
+        return float(str(value or "").replace(" ", "").replace(",", "."))
+
+    except (TypeError, ValueError):
+
+        return 0
+
+def keycrm_product_price(product: dict) -> float:
+
+    for field in ("price", "price_min", "min_price", "sale_price"):
+
+        value = keycrm_number(product.get(field))
+
+        if value > 0:
+
+            return value
+
+    prices = []
+
+    for offer in product.get("offers") or []:
+
+        for field in ("price", "sale_price", "price_min"):
+
+            value = keycrm_number(offer.get(field))
+
+            if value > 0:
+
+                prices.append(value)
+                break
+
+    return min(prices) if prices else 0
+
+def keycrm_product_category(product: dict) -> str:
+
+    category = product.get("category") or {}
+    raw_name = (
+        category.get("name")
+        if isinstance(category, dict)
+        else category
+    ) or product.get("category_name") or ""
+    name = str(raw_name).lower()
+
+    if "сук" in name or "dress" in name:
+
+        return "dresses"
+
+    if "костюм" in name or "комплект" in name or "set" in name:
+
+        return "sets"
+
+    if "топ" in name or "бод" in name or "футбол" in name:
+
+        return "tops"
+
+    return "all"
+
+def normalize_keycrm_product(product: dict, index: int) -> dict:
+
+    offers = product.get("offers") or []
+    options = []
+
+    for offer in offers:
+
+        for value in (
+            offer.get("name"),
+            offer.get("size"),
+            offer.get("option_1"),
+            offer.get("option1"),
+        ):
+
+            if value and str(value).strip() not in options:
+
+                options.append(str(value).strip())
+
+    palette = (
+        ("#c74f67", "#68142c"),
+        ("#d4c4b5", "#867161"),
+        ("#9c7567", "#402b27"),
+        ("#59514f", "#171313"),
+        ("#d9a9af", "#8c4e5b"),
+        ("#777675", "#292827"),
+    )
+    color_a, color_b = palette[index % len(palette)]
+
+    return {
+        "id": str(product.get("id") or product.get("uuid") or f"keycrm-{index + 1}"),
+        "name": str(product.get("name") or product.get("title") or "Товар").strip(),
+        "meta": " · ".join(options[:6]),
+        "price": keycrm_product_price(product),
+        "category": keycrm_product_category(product),
+        "tag": "",
+        "image": keycrm_product_image(product),
+        "a": color_a,
+        "b": color_b,
+        "rotate": f"{(index % 7) - 3}deg",
+    }
+
+@app.route("/api/products", methods=["GET"])
+
+def products_api():
+
+    try:
+
+        raw_products = []
+        page = 1
+
+        while True:
+
+            payload = keycrm_request(
+                "products",
+                {
+                    "include": "offers,images,category",
+                    "limit": 50,
+                    "page": page,
+                },
+            )
+            batch = payload.get("data", []) if isinstance(payload, dict) else []
+            raw_products.extend(batch)
+
+            current_page = int(payload.get("current_page") or page)
+            last_page = int(payload.get("last_page") or current_page)
+
+            if not batch or current_page >= last_page:
+
+                break
+
+            page += 1
+
+        products = [
+            normalize_keycrm_product(product, index)
+            for index, product in enumerate(raw_products)
+        ]
+        products = [
+            product
+            for product in products
+            if product["name"] and product["price"] > 0
+        ]
+
+        return (
+            {
+                "source": "keycrm",
+                "count": len(products),
+                "products": products,
+            },
+            200,
+            {
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "public, max-age=300",
+            },
+        )
+
+    except Exception as error:
+
+        print(f"KeyCRM products failed: {error}")
+        return (
+            {"error": "Products are temporarily unavailable"},
+            502,
+            {
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "no-store",
+            },
+        )
 
 @app.route("/", methods=["GET"])
 
