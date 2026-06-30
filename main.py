@@ -782,19 +782,36 @@ def product_menu():
     )
 
     for product_name in (
-        "Комбінезон - сукня трикотаж",
-        "Комбінезон кльош майкою",
+        "Комбінезон",
         "Боді з мереживом літо",
         "Футболка бавовна",
-        "Комбінезон короткий рукав трикотаж",
         "Сукня з комірцем",
         "Комплект піджак брюки та жилет",
         "Боді принтоване",
+    ):
+
+        markup.add(telebot.types.KeyboardButton(product_name))
+
+    return markup
+
+def jumpsuit_menu():
+
+    markup = telebot.types.ReplyKeyboardMarkup(
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+    for product_name in (
+        "Комбінезон - сукня трикотаж",
+        "Комбінезон кльош майкою",
+        "Комбінезон короткий рукав трикотаж",
         "Комбінезон біфлекс",
         "Комбінезон з вирізом",
     ):
 
         markup.add(telebot.types.KeyboardButton(product_name))
+
+    markup.add(telebot.types.KeyboardButton("⬅️ До списку товарів"))
 
     return markup
 
@@ -1175,6 +1192,22 @@ def handle_invoice_steps(message):
         if not text:
 
             bot.send_message(chat_id, "Введите название товара.")
+
+            return
+
+        if text == "Комбінезон":
+
+            bot.send_message(
+                chat_id,
+                "Выберите вариант комбинезона:",
+                reply_markup=jumpsuit_menu(),
+            )
+
+            return
+
+        if text == "⬅️ До списку товарів":
+
+            ask_item_name(chat_id)
 
             return
 
