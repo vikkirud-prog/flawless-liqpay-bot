@@ -758,6 +758,8 @@ def amount_menu():
         one_time_keyboard=True,
     )
 
+    markup.row(telebot.types.KeyboardButton("150"))
+
     for left_amount, right_amount in (
         ("990", "891"),
         ("890", "801"),
