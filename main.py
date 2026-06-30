@@ -441,6 +441,7 @@ def fiscalize_checkbox_receipt(order_id: str, items: list, amount) -> str:
 
     for item in items:
 
+        fiscal_name = item.get("fiscal_name") or item["name"]
         price_cents = int(
             (Decimal(str(item["price"])) * 100).quantize(Decimal("1"))
         )
@@ -448,8 +449,8 @@ def fiscalize_checkbox_receipt(order_id: str, items: list, amount) -> str:
         goods.append(
             {
                 "good": {
-                    "code": checkbox_good_code(item["name"]),
-                    "name": item["name"][:255],
+                    "code": checkbox_good_code(fiscal_name),
+                    "name": fiscal_name[:255],
                     "price": price_cents,
                     "tax": [CHECKBOX_TAX_CODE],
                 },
@@ -833,6 +834,40 @@ def ask_item_name(chat_id: int):
         reply_markup=product_menu(),
     )
 
+def add_item_and_show_actions(
+    chat_id: int,
+    data: dict,
+    product_name: str,
+    fiscal_name: str = None,
+):
+
+    item = {
+        "name": product_name,
+        "price": data.pop("pending_item_price"),
+    }
+
+    if fiscal_name:
+
+        item["fiscal_name"] = fiscal_name
+
+    data["items"].append(item)
+    data["step"] = "item_action"
+    user_steps[chat_id] = data
+
+    items_summary = "\n".join(
+        f"{index}. {html.escape(item['name'])} — "
+        f"<b>{html.escape(item['price'])} UAH</b>"
+        for index, item in enumerate(data["items"], start=1)
+    )
+
+    bot.send_message(
+        chat_id,
+        "Добавлено ✅\n\n"
+        f"{items_summary}\n\n"
+        "Добавить ещё один товар или создать инвойс?",
+        reply_markup=item_action_menu(),
+    )
+
 @bot.message_handler(commands=["start"])
 
 def start(message):
@@ -1181,6 +1216,17 @@ def handle_invoice_steps(message):
 
         data["pending_item_price"] = price_display
 
+        if price_display == "150":
+
+            add_item_and_show_actions(
+                chat_id,
+                data,
+                product_name="Одяг",
+                fiscal_name="Шкарпетки",
+            )
+
+            return
+
         data["step"] = "item_name"
 
         user_steps[chat_id] = data
@@ -1213,30 +1259,7 @@ def handle_invoice_steps(message):
 
             return
 
-        data["items"].append(
-            {
-                "name": text,
-                "price": data.pop("pending_item_price"),
-            }
-        )
-
-        data["step"] = "item_action"
-
-        user_steps[chat_id] = data
-
-        items_summary = "\n".join(
-            f"{index}. {html.escape(item['name'])} — "
-            f"<b>{html.escape(item['price'])} UAH</b>"
-            for index, item in enumerate(data["items"], start=1)
-        )
-
-        bot.send_message(
-            chat_id,
-            "Добавлено ✅\n\n"
-            f"{items_summary}\n\n"
-            "Добавить ещё один товар или создать инвойс?",
-            reply_markup=item_action_menu(),
-        )
+        add_item_and_show_actions(chat_id, data, product_name=text)
 
         return
 
