@@ -1465,7 +1465,14 @@ def keycrm_request(path: str, params=None):
 
 def keycrm_product_image(product: dict) -> str:
 
-    for field in ("image", "image_url", "picture", "picture_url", "thumbnail"):
+    for field in (
+        "thumbnail_url",
+        "image",
+        "image_url",
+        "picture",
+        "picture_url",
+        "thumbnail",
+    ):
 
         value = product.get(field)
 
@@ -1481,7 +1488,7 @@ def keycrm_product_image(product: dict) -> str:
 
                 return url
 
-    for field in ("images", "pictures", "photos"):
+    for field in ("attachments_data", "images", "pictures", "photos"):
 
         for image in product.get(field) or []:
 
@@ -1613,7 +1620,6 @@ def products_api():
             payload = keycrm_request(
                 "products",
                 {
-                    "include": "offers,images,category",
                     "limit": 50,
                     "page": page,
                 },
