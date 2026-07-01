@@ -1415,7 +1415,26 @@ def handle_invoice_steps(message):
 
             msg += "\nLiqPay отправил счет клиенту по телефону, но ссылку в ответе не вернул."
 
-        bot.send_message(chat_id, msg, reply_markup=main_menu())
+        created_invoice_markup = telebot.types.InlineKeyboardMarkup()
+
+        if invoice_saved:
+
+            created_invoice_markup.add(
+                telebot.types.InlineKeyboardButton(
+                    text="❌ Скасувати інвойс",
+                    callback_data=f"cancel:{order_id}",
+                )
+            )
+
+        bot.send_message(
+            chat_id,
+            msg,
+            reply_markup=(
+                created_invoice_markup
+                if invoice_saved
+                else main_menu()
+            ),
+        )
 
         if href:
 
@@ -1429,6 +1448,15 @@ def handle_invoice_steps(message):
                 chat_id,
                 client_message,
                 disable_web_page_preview=True,
+                reply_markup=main_menu(),
+            )
+
+        elif invoice_saved:
+
+            bot.send_message(
+                chat_id,
+                "Инвойс можно отменить кнопкой выше или через раздел «История».",
+                reply_markup=main_menu(),
             )
 
 @bot.message_handler(func=lambda message: True)
