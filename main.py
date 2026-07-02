@@ -2098,23 +2098,102 @@ def keycrm_product_category(product: dict) -> str:
 
     return "all"
 
-def normalize_keycrm_product(product: dict, index: int) -> dict:
+def keycrm_product_subcategory(name: str) -> str:
 
-    offers = product.get("offers") or []
-    options = []
+    normalized = name.lower()
+    groups = (
+        (("комбінез", "комбинез"), "Комбінезони"),
+        (("боді", "боди"), "Боді"),
+        (("сукн", "плать"), "Сукні"),
+        (("костюм", "комплект"), "Костюми та комплекти"),
+        (("футбол",), "Футболки"),
+        (("сороч", "рубаш"), "Сорочки"),
+        (("штан", "брюк", "палац"), "Штани"),
+        (("спідниц", "юбк"), "Спідниці"),
+        (("топ",), "Топи"),
+        (("піджак", "жакет", "блейзер"), "Піджаки та жилети"),
+    )
+
+    for fragments, label in groups:
+
+        if any(fragment in normalized for fragment in fragments):
+
+            return label
+
+    return "Інше"
+
+def keycrm_product_gender(product: dict) -> str:
+
+    category = product.get("category") or {}
+    category_name = (
+        category.get("name")
+        if isinstance(category, dict)
+        else category
+    ) or product.get("category_name") or ""
+    searchable = f"{category_name} {product.get('name') or ''}".lower()
+
+    if any(marker in searchable for marker in ("чолов", "муж", "для нього", "men")):
+
+        return "men"
+
+    return "women"
+
+def keycrm_offer_options(offers: list) -> tuple[list, list, list]:
+
+    sizes = []
+    colors = []
+    variants = []
 
     for offer in offers:
 
-        for value in (
-            offer.get("name"),
-            offer.get("size"),
-            offer.get("option_1"),
-            offer.get("option1"),
-        ):
+        properties = offer.get("properties") or []
+        variant = {
+            "id": str(offer.get("id") or ""),
+            "sku": str(offer.get("sku") or ""),
+            "price": keycrm_number(offer.get("price")),
+            "quantity": keycrm_number(offer.get("quantity")),
+            "image": str(offer.get("thumbnail_url") or ""),
+            "size": "",
+            "color": "",
+        }
 
-            if value and str(value).strip() not in options:
+        for prop in properties:
 
-                options.append(str(value).strip())
+            if not isinstance(prop, dict):
+
+                continue
+
+            prop_name = str(prop.get("name") or "").strip().lower()
+            prop_value = str(prop.get("value") or "").strip()
+
+            if not prop_value:
+
+                continue
+
+            if any(marker in prop_name for marker in ("розм", "размер", "size")):
+
+                variant["size"] = prop_value
+
+                if prop_value not in sizes:
+
+                    sizes.append(prop_value)
+
+            if any(marker in prop_name for marker in ("колір", "цвет", "color", "colour")):
+
+                variant["color"] = prop_value
+
+                if prop_value not in colors:
+
+                    colors.append(prop_value)
+
+        variants.append(variant)
+
+    return sizes, colors, variants
+
+def normalize_keycrm_product(product: dict, index: int) -> dict:
+
+    offers = product.get("offers") or []
+    sizes, colors, variants = keycrm_offer_options(offers)
 
     palette = (
         ("#c74f67", "#68142c"),
@@ -2129,11 +2208,18 @@ def normalize_keycrm_product(product: dict, index: int) -> dict:
     return {
         "id": str(product.get("id") or product.get("uuid") or f"keycrm-{index + 1}"),
         "name": str(product.get("name") or product.get("title") or "Товар").strip(),
-        "meta": " · ".join(options[:6]),
+        "meta": " · ".join(sizes[:6]),
         "price": keycrm_product_price(product),
         "category": keycrm_product_category(product),
+        "gender": keycrm_product_gender(product),
+        "subcategory": keycrm_product_subcategory(
+            str(product.get("name") or product.get("title") or "")
+        ),
         "tag": "",
         "image": keycrm_product_image(product),
+        "sizes": sizes,
+        "colors": colors,
+        "variants": variants,
         "a": color_a,
         "b": color_b,
         "rotate": f"{(index % 7) - 3}deg",
@@ -2168,6 +2254,111 @@ def products_api():
                 break
 
             page += 1
+
+        raw_categories = []
+        page = 1
+
+        while True:
+
+            categories_payload = keycrm_request(
+                "products/categories",
+                {
+                    "limit": 50,
+                    "page": page,
+                },
+            )
+            categories_batch = (
+                categories_payload.get("data", [])
+                if isinstance(categories_payload, dict)
+                else []
+            )
+            raw_categories.extend(categories_batch)
+
+            current_page = int(categories_payload.get("current_page") or page)
+            last_page = int(categories_payload.get("last_page") or current_page)
+
+            if not categories_batch or current_page >= last_page:
+
+                break
+
+            page += 1
+
+        categories_by_id = {
+            str(category.get("id")): category
+            for category in raw_categories
+            if category.get("id") is not None
+        }
+
+        def category_path(category_id):
+
+            names = []
+            seen = set()
+            current_id = str(category_id or "")
+
+            while current_id and current_id not in seen:
+
+                seen.add(current_id)
+                category = categories_by_id.get(current_id)
+
+                if not category:
+
+                    break
+
+                name = str(category.get("name") or "").strip()
+
+                if name:
+
+                    names.append(name)
+
+                current_id = str(category.get("parent_id") or "")
+
+            return " / ".join(reversed(names))
+
+        for product in raw_products:
+
+            product["category_name"] = category_path(product.get("category_id"))
+
+        raw_offers = []
+        page = 1
+
+        while True:
+
+            offers_payload = keycrm_request(
+                "offers",
+                {
+                    "limit": 50,
+                    "page": page,
+                },
+            )
+            offers_batch = (
+                offers_payload.get("data", [])
+                if isinstance(offers_payload, dict)
+                else []
+            )
+            raw_offers.extend(offers_batch)
+
+            current_page = int(offers_payload.get("current_page") or page)
+            last_page = int(offers_payload.get("last_page") or current_page)
+
+            if not offers_batch or current_page >= last_page:
+
+                break
+
+            page += 1
+
+        offers_by_product = {}
+
+        for offer in raw_offers:
+
+            product_id = str(offer.get("product_id") or "")
+            offers_by_product.setdefault(product_id, []).append(offer)
+
+        for product in raw_products:
+
+            product["offers"] = offers_by_product.get(
+                str(product.get("id") or product.get("uuid") or ""),
+                [],
+            )
 
         products = [
             normalize_keycrm_product(product, index)
@@ -4496,23 +4687,102 @@ def keycrm_product_category(product: dict) -> str:
 
     return "all"
 
-def normalize_keycrm_product(product: dict, index: int) -> dict:
+def keycrm_product_subcategory(name: str) -> str:
 
-    offers = product.get("offers") or []
-    options = []
+    normalized = name.lower()
+    groups = (
+        (("комбінез", "комбинез"), "Комбінезони"),
+        (("боді", "боди"), "Боді"),
+        (("сукн", "плать"), "Сукні"),
+        (("костюм", "комплект"), "Костюми та комплекти"),
+        (("футбол",), "Футболки"),
+        (("сороч", "рубаш"), "Сорочки"),
+        (("штан", "брюк", "палац"), "Штани"),
+        (("спідниц", "юбк"), "Спідниці"),
+        (("топ",), "Топи"),
+        (("піджак", "жакет", "блейзер"), "Піджаки та жилети"),
+    )
+
+    for fragments, label in groups:
+
+        if any(fragment in normalized for fragment in fragments):
+
+            return label
+
+    return "Інше"
+
+def keycrm_product_gender(product: dict) -> str:
+
+    category = product.get("category") or {}
+    category_name = (
+        category.get("name")
+        if isinstance(category, dict)
+        else category
+    ) or product.get("category_name") or ""
+    searchable = f"{category_name} {product.get('name') or ''}".lower()
+
+    if any(marker in searchable for marker in ("чолов", "муж", "для нього", "men")):
+
+        return "men"
+
+    return "women"
+
+def keycrm_offer_options(offers: list) -> tuple[list, list, list]:
+
+    sizes = []
+    colors = []
+    variants = []
 
     for offer in offers:
 
-        for value in (
-            offer.get("name"),
-            offer.get("size"),
-            offer.get("option_1"),
-            offer.get("option1"),
-        ):
+        properties = offer.get("properties") or []
+        variant = {
+            "id": str(offer.get("id") or ""),
+            "sku": str(offer.get("sku") or ""),
+            "price": keycrm_number(offer.get("price")),
+            "quantity": keycrm_number(offer.get("quantity")),
+            "image": str(offer.get("thumbnail_url") or ""),
+            "size": "",
+            "color": "",
+        }
 
-            if value and str(value).strip() not in options:
+        for prop in properties:
 
-                options.append(str(value).strip())
+            if not isinstance(prop, dict):
+
+                continue
+
+            prop_name = str(prop.get("name") or "").strip().lower()
+            prop_value = str(prop.get("value") or "").strip()
+
+            if not prop_value:
+
+                continue
+
+            if any(marker in prop_name for marker in ("розм", "размер", "size")):
+
+                variant["size"] = prop_value
+
+                if prop_value not in sizes:
+
+                    sizes.append(prop_value)
+
+            if any(marker in prop_name for marker in ("колір", "цвет", "color", "colour")):
+
+                variant["color"] = prop_value
+
+                if prop_value not in colors:
+
+                    colors.append(prop_value)
+
+        variants.append(variant)
+
+    return sizes, colors, variants
+
+def normalize_keycrm_product(product: dict, index: int) -> dict:
+
+    offers = product.get("offers") or []
+    sizes, colors, variants = keycrm_offer_options(offers)
 
     palette = (
         ("#c74f67", "#68142c"),
@@ -4527,11 +4797,18 @@ def normalize_keycrm_product(product: dict, index: int) -> dict:
     return {
         "id": str(product.get("id") or product.get("uuid") or f"keycrm-{index + 1}"),
         "name": str(product.get("name") or product.get("title") or "Товар").strip(),
-        "meta": " · ".join(options[:6]),
+        "meta": " · ".join(sizes[:6]),
         "price": keycrm_product_price(product),
         "category": keycrm_product_category(product),
+        "gender": keycrm_product_gender(product),
+        "subcategory": keycrm_product_subcategory(
+            str(product.get("name") or product.get("title") or "")
+        ),
         "tag": "",
         "image": keycrm_product_image(product),
+        "sizes": sizes,
+        "colors": colors,
+        "variants": variants,
         "a": color_a,
         "b": color_b,
         "rotate": f"{(index % 7) - 3}deg",
@@ -4566,6 +4843,111 @@ def products_api():
                 break
 
             page += 1
+
+        raw_categories = []
+        page = 1
+
+        while True:
+
+            categories_payload = keycrm_request(
+                "products/categories",
+                {
+                    "limit": 50,
+                    "page": page,
+                },
+            )
+            categories_batch = (
+                categories_payload.get("data", [])
+                if isinstance(categories_payload, dict)
+                else []
+            )
+            raw_categories.extend(categories_batch)
+
+            current_page = int(categories_payload.get("current_page") or page)
+            last_page = int(categories_payload.get("last_page") or current_page)
+
+            if not categories_batch or current_page >= last_page:
+
+                break
+
+            page += 1
+
+        categories_by_id = {
+            str(category.get("id")): category
+            for category in raw_categories
+            if category.get("id") is not None
+        }
+
+        def category_path(category_id):
+
+            names = []
+            seen = set()
+            current_id = str(category_id or "")
+
+            while current_id and current_id not in seen:
+
+                seen.add(current_id)
+                category = categories_by_id.get(current_id)
+
+                if not category:
+
+                    break
+
+                name = str(category.get("name") or "").strip()
+
+                if name:
+
+                    names.append(name)
+
+                current_id = str(category.get("parent_id") or "")
+
+            return " / ".join(reversed(names))
+
+        for product in raw_products:
+
+            product["category_name"] = category_path(product.get("category_id"))
+
+        raw_offers = []
+        page = 1
+
+        while True:
+
+            offers_payload = keycrm_request(
+                "offers",
+                {
+                    "limit": 50,
+                    "page": page,
+                },
+            )
+            offers_batch = (
+                offers_payload.get("data", [])
+                if isinstance(offers_payload, dict)
+                else []
+            )
+            raw_offers.extend(offers_batch)
+
+            current_page = int(offers_payload.get("current_page") or page)
+            last_page = int(offers_payload.get("last_page") or current_page)
+
+            if not offers_batch or current_page >= last_page:
+
+                break
+
+            page += 1
+
+        offers_by_product = {}
+
+        for offer in raw_offers:
+
+            product_id = str(offer.get("product_id") or "")
+            offers_by_product.setdefault(product_id, []).append(offer)
+
+        for product in raw_products:
+
+            product["offers"] = offers_by_product.get(
+                str(product.get("id") or product.get("uuid") or ""),
+                [],
+            )
 
         products = [
             normalize_keycrm_product(product, index)
@@ -6405,23 +6787,102 @@ def keycrm_product_category(product: dict) -> str:
 
     return "all"
 
-def normalize_keycrm_product(product: dict, index: int) -> dict:
+def keycrm_product_subcategory(name: str) -> str:
 
-    offers = product.get("offers") or []
-    options = []
+    normalized = name.lower()
+    groups = (
+        (("комбінез", "комбинез"), "Комбінезони"),
+        (("боді", "боди"), "Боді"),
+        (("сукн", "плать"), "Сукні"),
+        (("костюм", "комплект"), "Костюми та комплекти"),
+        (("футбол",), "Футболки"),
+        (("сороч", "рубаш"), "Сорочки"),
+        (("штан", "брюк", "палац"), "Штани"),
+        (("спідниц", "юбк"), "Спідниці"),
+        (("топ",), "Топи"),
+        (("піджак", "жакет", "блейзер"), "Піджаки та жилети"),
+    )
+
+    for fragments, label in groups:
+
+        if any(fragment in normalized for fragment in fragments):
+
+            return label
+
+    return "Інше"
+
+def keycrm_product_gender(product: dict) -> str:
+
+    category = product.get("category") or {}
+    category_name = (
+        category.get("name")
+        if isinstance(category, dict)
+        else category
+    ) or product.get("category_name") or ""
+    searchable = f"{category_name} {product.get('name') or ''}".lower()
+
+    if any(marker in searchable for marker in ("чолов", "муж", "для нього", "men")):
+
+        return "men"
+
+    return "women"
+
+def keycrm_offer_options(offers: list) -> tuple[list, list, list]:
+
+    sizes = []
+    colors = []
+    variants = []
 
     for offer in offers:
 
-        for value in (
-            offer.get("name"),
-            offer.get("size"),
-            offer.get("option_1"),
-            offer.get("option1"),
-        ):
+        properties = offer.get("properties") or []
+        variant = {
+            "id": str(offer.get("id") or ""),
+            "sku": str(offer.get("sku") or ""),
+            "price": keycrm_number(offer.get("price")),
+            "quantity": keycrm_number(offer.get("quantity")),
+            "image": str(offer.get("thumbnail_url") or ""),
+            "size": "",
+            "color": "",
+        }
 
-            if value and str(value).strip() not in options:
+        for prop in properties:
 
-                options.append(str(value).strip())
+            if not isinstance(prop, dict):
+
+                continue
+
+            prop_name = str(prop.get("name") or "").strip().lower()
+            prop_value = str(prop.get("value") or "").strip()
+
+            if not prop_value:
+
+                continue
+
+            if any(marker in prop_name for marker in ("розм", "размер", "size")):
+
+                variant["size"] = prop_value
+
+                if prop_value not in sizes:
+
+                    sizes.append(prop_value)
+
+            if any(marker in prop_name for marker in ("колір", "цвет", "color", "colour")):
+
+                variant["color"] = prop_value
+
+                if prop_value not in colors:
+
+                    colors.append(prop_value)
+
+        variants.append(variant)
+
+    return sizes, colors, variants
+
+def normalize_keycrm_product(product: dict, index: int) -> dict:
+
+    offers = product.get("offers") or []
+    sizes, colors, variants = keycrm_offer_options(offers)
 
     palette = (
         ("#c74f67", "#68142c"),
@@ -6436,11 +6897,18 @@ def normalize_keycrm_product(product: dict, index: int) -> dict:
     return {
         "id": str(product.get("id") or product.get("uuid") or f"keycrm-{index + 1}"),
         "name": str(product.get("name") or product.get("title") or "Товар").strip(),
-        "meta": " · ".join(options[:6]),
+        "meta": " · ".join(sizes[:6]),
         "price": keycrm_product_price(product),
         "category": keycrm_product_category(product),
+        "gender": keycrm_product_gender(product),
+        "subcategory": keycrm_product_subcategory(
+            str(product.get("name") or product.get("title") or "")
+        ),
         "tag": "",
         "image": keycrm_product_image(product),
+        "sizes": sizes,
+        "colors": colors,
+        "variants": variants,
         "a": color_a,
         "b": color_b,
         "rotate": f"{(index % 7) - 3}deg",
@@ -6475,6 +6943,111 @@ def products_api():
                 break
 
             page += 1
+
+        raw_categories = []
+        page = 1
+
+        while True:
+
+            categories_payload = keycrm_request(
+                "products/categories",
+                {
+                    "limit": 50,
+                    "page": page,
+                },
+            )
+            categories_batch = (
+                categories_payload.get("data", [])
+                if isinstance(categories_payload, dict)
+                else []
+            )
+            raw_categories.extend(categories_batch)
+
+            current_page = int(categories_payload.get("current_page") or page)
+            last_page = int(categories_payload.get("last_page") or current_page)
+
+            if not categories_batch or current_page >= last_page:
+
+                break
+
+            page += 1
+
+        categories_by_id = {
+            str(category.get("id")): category
+            for category in raw_categories
+            if category.get("id") is not None
+        }
+
+        def category_path(category_id):
+
+            names = []
+            seen = set()
+            current_id = str(category_id or "")
+
+            while current_id and current_id not in seen:
+
+                seen.add(current_id)
+                category = categories_by_id.get(current_id)
+
+                if not category:
+
+                    break
+
+                name = str(category.get("name") or "").strip()
+
+                if name:
+
+                    names.append(name)
+
+                current_id = str(category.get("parent_id") or "")
+
+            return " / ".join(reversed(names))
+
+        for product in raw_products:
+
+            product["category_name"] = category_path(product.get("category_id"))
+
+        raw_offers = []
+        page = 1
+
+        while True:
+
+            offers_payload = keycrm_request(
+                "offers",
+                {
+                    "limit": 50,
+                    "page": page,
+                },
+            )
+            offers_batch = (
+                offers_payload.get("data", [])
+                if isinstance(offers_payload, dict)
+                else []
+            )
+            raw_offers.extend(offers_batch)
+
+            current_page = int(offers_payload.get("current_page") or page)
+            last_page = int(offers_payload.get("last_page") or current_page)
+
+            if not offers_batch or current_page >= last_page:
+
+                break
+
+            page += 1
+
+        offers_by_product = {}
+
+        for offer in raw_offers:
+
+            product_id = str(offer.get("product_id") or "")
+            offers_by_product.setdefault(product_id, []).append(offer)
+
+        for product in raw_products:
+
+            product["offers"] = offers_by_product.get(
+                str(product.get("id") or product.get("uuid") or ""),
+                [],
+            )
 
         products = [
             normalize_keycrm_product(product, index)
