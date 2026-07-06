@@ -2444,6 +2444,16 @@ def products_api():
             if product["name"] and product["price"] > 0
         ]
 
+        newest_products = sorted(
+            products,
+            key=lambda product: keycrm_number(product.get("id")),
+            reverse=True,
+        )[:8]
+
+        for product in newest_products:
+
+            product["tag"] = "New"
+
         for gender in ("women", "men"):
 
             gender_products = [
@@ -5633,6 +5643,16 @@ def products_api():
             if product["name"] and product["price"] > 0
         ]
 
+        newest_products = sorted(
+            products,
+            key=lambda product: keycrm_number(product.get("id")),
+            reverse=True,
+        )[:8]
+
+        for product in newest_products:
+
+            product["tag"] = "New"
+
         for gender in ("women", "men"):
 
             gender_products = [
@@ -7853,6 +7873,16 @@ def products_api():
             for product in products
             if product["name"] and product["price"] > 0
         ]
+
+        newest_products = sorted(
+            products,
+            key=lambda product: keycrm_number(product.get("id")),
+            reverse=True,
+        )[:8]
+
+        for product in newest_products:
+
+            product["tag"] = "New"
 
         for gender in ("women", "men"):
 
