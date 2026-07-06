@@ -2461,6 +2461,8 @@ def products_api():
             for product in ranked[:8]:
 
                 product["featured"] = True
+                if not product.get("tag"):
+                    product["tag"] = "Bestseller"
 
         payload = {
             "source": "keycrm",
@@ -5648,6 +5650,8 @@ def products_api():
             for product in ranked[:8]:
 
                 product["featured"] = True
+                if not product.get("tag"):
+                    product["tag"] = "Bestseller"
 
         payload = {
             "source": "keycrm",
@@ -7867,6 +7871,8 @@ def products_api():
             for product in ranked[:8]:
 
                 product["featured"] = True
+                if not product.get("tag"):
+                    product["tag"] = "Bestseller"
 
         payload = {
             "source": "keycrm",
