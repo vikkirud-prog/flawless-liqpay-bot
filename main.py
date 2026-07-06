@@ -2217,6 +2217,7 @@ def normalize_keycrm_product(product: dict, index: int) -> dict:
             str(product.get("name") or product.get("title") or "")
         ),
         "tag": "",
+        "tags": [],
         "image": keycrm_product_image(product),
         "sizes": sizes,
         "colors": colors,
@@ -2452,7 +2453,7 @@ def products_api():
 
         for product in newest_products:
 
-            product["tag"] = "New"
+            product["tags"].append("New")
 
         for gender in ("women", "men"):
 
@@ -2471,8 +2472,12 @@ def products_api():
             for product in ranked[:8]:
 
                 product["featured"] = True
-                if not product.get("tag"):
-                    product["tag"] = "Bestseller"
+                product["tags"].append("Bestseller")
+
+        for product in products:
+
+            product["tags"] = list(dict.fromkeys(product["tags"]))
+            product["tag"] = product["tags"][0] if product["tags"] else ""
 
         payload = {
             "source": "keycrm",
@@ -5416,6 +5421,7 @@ def normalize_keycrm_product(product: dict, index: int) -> dict:
             str(product.get("name") or product.get("title") or "")
         ),
         "tag": "",
+        "tags": [],
         "image": keycrm_product_image(product),
         "sizes": sizes,
         "colors": colors,
@@ -5651,7 +5657,7 @@ def products_api():
 
         for product in newest_products:
 
-            product["tag"] = "New"
+            product["tags"].append("New")
 
         for gender in ("women", "men"):
 
@@ -5670,8 +5676,12 @@ def products_api():
             for product in ranked[:8]:
 
                 product["featured"] = True
-                if not product.get("tag"):
-                    product["tag"] = "Bestseller"
+                product["tags"].append("Bestseller")
+
+        for product in products:
+
+            product["tags"] = list(dict.fromkeys(product["tags"]))
+            product["tag"] = product["tags"][0] if product["tags"] else ""
 
         payload = {
             "source": "keycrm",
@@ -7647,6 +7657,7 @@ def normalize_keycrm_product(product: dict, index: int) -> dict:
             str(product.get("name") or product.get("title") or "")
         ),
         "tag": "",
+        "tags": [],
         "image": keycrm_product_image(product),
         "sizes": sizes,
         "colors": colors,
@@ -7882,7 +7893,7 @@ def products_api():
 
         for product in newest_products:
 
-            product["tag"] = "New"
+            product["tags"].append("New")
 
         for gender in ("women", "men"):
 
@@ -7901,8 +7912,12 @@ def products_api():
             for product in ranked[:8]:
 
                 product["featured"] = True
-                if not product.get("tag"):
-                    product["tag"] = "Bestseller"
+                product["tags"].append("Bestseller")
+
+        for product in products:
+
+            product["tags"] = list(dict.fromkeys(product["tags"]))
+            product["tag"] = product["tags"][0] if product["tags"] else ""
 
         payload = {
             "source": "keycrm",
