@@ -133,6 +133,7 @@ def init_db():
                     ADD COLUMN IF NOT EXISTS checkbox_status TEXT,
                     ADD COLUMN IF NOT EXISTS checkbox_error TEXT,
                     ADD COLUMN IF NOT EXISTS fiscalized_at TIMESTAMPTZ,
+                    ADD COLUMN IF NOT EXISTS liqpay_payment_id TEXT,
                     ADD COLUMN IF NOT EXISTS refund_status TEXT,
                     ADD COLUMN IF NOT EXISTS refund_amount NUMERIC(12, 2),
                     ADD COLUMN IF NOT EXISTS refund_checkbox_receipt_id UUID,
@@ -808,7 +809,8 @@ def get_recent_invoices(limit: int = 10):
             cursor.execute(
                 """
                 SELECT order_id, phone, amount, currency, description,
-                       status, short_code, created_by_name, created_at
+                       status, short_code, created_by_name, created_at,
+                       liqpay_payment_id
                 FROM invoices
                 ORDER BY created_at DESC
                 LIMIT %s
@@ -880,7 +882,8 @@ def get_paid_invoices_by_phone(phone: str, limit: int = 10):
             cursor.execute(
                 """
                 SELECT order_id, amount, currency, description, created_at,
-                       checkbox_receipt_id, refund_status, status
+                       checkbox_receipt_id, refund_status, status,
+                       liqpay_payment_id
                 FROM invoices
                 WHERE phone = %s
                   AND status IN ('success', 'reversed')
@@ -1228,6 +1231,7 @@ def show_refund_search_results(chat_id: int, phone: str):
         checkbox_receipt_id,
         refund_status,
         payment_status,
+        liqpay_payment_id,
     ) in invoices:
 
         markup = telebot.types.InlineKeyboardMarkup()
@@ -1260,6 +1264,7 @@ def show_refund_search_results(chat_id: int, phone: str):
             f"<b>{created_at.astimezone().strftime('%d.%m.%Y %H:%M')}</b>\n"
             f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
             f"Товар: {html.escape(description)}\n"
+            f"ID оплаты LiqPay: <code>{html.escape(liqpay_payment_id or '—')}</code>\n"
             f"Чек Checkbox: {'найден' if checkbox_receipt_id else 'не найден'}"
         )
 
@@ -1451,6 +1456,7 @@ def show_history(message):
         short_code,
         created_by_name,
         created_at,
+        liqpay_payment_id,
     ) in invoices:
 
         phone_for_display = display_phone(phone)
@@ -1463,6 +1469,7 @@ def show_history(message):
             f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
             f"Описание: {html.escape(description)}\n"
             f"Создал: {html.escape(created_by_name)}\n"
+            f"ID оплаты LiqPay: <code>{html.escape(liqpay_payment_id or '—')}</code>\n"
             f"ID: <code>{html.escape(order_id)}</code>"
         )
 
@@ -3030,6 +3037,12 @@ def liqpay_callback():
 
     order_id = str(callback_data.get("order_id", ""))
     status = str(callback_data.get("status", "unknown"))
+    liqpay_payment_id = str(
+        callback_data.get("payment_id")
+        or callback_data.get("transaction_id")
+        or callback_data.get("liqpay_order_id")
+        or ""
+    ) or None
 
     if not order_id:
 
@@ -3042,12 +3055,14 @@ def liqpay_callback():
             cursor.execute(
                 """
                 UPDATE invoices
-                SET status = %s, updated_at = NOW()
+                SET status = %s,
+                    liqpay_payment_id = COALESCE(%s, liqpay_payment_id),
+                    updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
                           keycrm_order_id
                 """,
-                (status, order_id),
+                (status, liqpay_payment_id, order_id),
             )
 
             updated_invoice = cursor.fetchone()
@@ -3057,6 +3072,11 @@ def liqpay_callback():
         amount, currency, phone, description, items, keycrm_order_id = updated_invoice
         phone_for_display = display_phone(phone)
         product_names = format_product_names(items, description)
+        payment_id_line = (
+            f"ID оплаты LiqPay: <code>{html.escape(liqpay_payment_id)}</code>\n"
+            if liqpay_payment_id
+            else ""
+        )
 
         if keycrm_order_id:
 
@@ -3135,6 +3155,7 @@ def liqpay_callback():
                     f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
                     f"Товар: {html.escape(product_names)}\n"
                     f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
+                    f"{payment_id_line}"
                     f"{checkbox_message}",
                     reply_markup=copy_phone_markup,
                 )
@@ -3353,6 +3374,7 @@ def init_db():
                     ADD COLUMN IF NOT EXISTS checkbox_status TEXT,
                     ADD COLUMN IF NOT EXISTS checkbox_error TEXT,
                     ADD COLUMN IF NOT EXISTS fiscalized_at TIMESTAMPTZ,
+                    ADD COLUMN IF NOT EXISTS liqpay_payment_id TEXT,
                     ADD COLUMN IF NOT EXISTS refund_status TEXT,
                     ADD COLUMN IF NOT EXISTS refund_amount NUMERIC(12, 2),
                     ADD COLUMN IF NOT EXISTS refund_checkbox_receipt_id UUID,
@@ -4028,7 +4050,8 @@ def get_recent_invoices(limit: int = 10):
             cursor.execute(
                 """
                 SELECT order_id, phone, amount, currency, description,
-                       status, short_code, created_by_name, created_at
+                       status, short_code, created_by_name, created_at,
+                       liqpay_payment_id
                 FROM invoices
                 ORDER BY created_at DESC
                 LIMIT %s
@@ -4100,7 +4123,8 @@ def get_paid_invoices_by_phone(phone: str, limit: int = 10):
             cursor.execute(
                 """
                 SELECT order_id, amount, currency, description, created_at,
-                       checkbox_receipt_id, refund_status, status
+                       checkbox_receipt_id, refund_status, status,
+                       liqpay_payment_id
                 FROM invoices
                 WHERE phone = %s
                   AND status IN ('success', 'reversed')
@@ -4449,6 +4473,7 @@ def show_refund_search_results(chat_id: int, phone: str):
         checkbox_receipt_id,
         refund_status,
         payment_status,
+        liqpay_payment_id,
     ) in invoices:
 
         markup = telebot.types.InlineKeyboardMarkup()
@@ -4478,6 +4503,7 @@ def show_refund_search_results(chat_id: int, phone: str):
             f"<b>{created_at.astimezone().strftime('%d.%m.%Y %H:%M')}</b>\n"
             f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
             f"Товар: {html.escape(description)}\n"
+            f"ID оплаты LiqPay: <code>{html.escape(liqpay_payment_id or '—')}</code>\n"
             f"Чек Checkbox: {'найден' if checkbox_receipt_id else 'не найден'}"
         )
 
@@ -4655,6 +4681,7 @@ def show_history(message):
         short_code,
         created_by_name,
         created_at,
+        liqpay_payment_id,
     ) in invoices:
 
         phone_for_display = display_phone(phone)
@@ -4667,6 +4694,7 @@ def show_history(message):
             f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
             f"Описание: {html.escape(description)}\n"
             f"Создал: {html.escape(created_by_name)}\n"
+            f"ID оплаты LiqPay: <code>{html.escape(liqpay_payment_id or '—')}</code>\n"
             f"ID: <code>{html.escape(order_id)}</code>"
         )
 
@@ -5773,6 +5801,12 @@ def liqpay_callback():
 
     order_id = str(callback_data.get("order_id", ""))
     status = str(callback_data.get("status", "unknown"))
+    liqpay_payment_id = str(
+        callback_data.get("payment_id")
+        or callback_data.get("transaction_id")
+        or callback_data.get("liqpay_order_id")
+        or ""
+    ) or None
 
     if not order_id:
 
@@ -5785,12 +5819,14 @@ def liqpay_callback():
             cursor.execute(
                 """
                 UPDATE invoices
-                SET status = %s, updated_at = NOW()
+                SET status = %s,
+                    liqpay_payment_id = COALESCE(%s, liqpay_payment_id),
+                    updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
                           keycrm_order_id
                 """,
-                (status, order_id),
+                (status, liqpay_payment_id, order_id),
             )
 
             updated_invoice = cursor.fetchone()
@@ -5800,6 +5836,11 @@ def liqpay_callback():
         amount, currency, phone, description, items, keycrm_order_id = updated_invoice
         phone_for_display = display_phone(phone)
         product_names = format_product_names(items, description)
+        payment_id_line = (
+            f"ID оплаты LiqPay: <code>{html.escape(liqpay_payment_id)}</code>\n"
+            if liqpay_payment_id
+            else ""
+        )
 
         if keycrm_order_id:
 
@@ -5878,6 +5919,7 @@ def liqpay_callback():
                     f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
                     f"Товар: {html.escape(product_names)}\n"
                     f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
+                    f"{payment_id_line}"
                     f"{checkbox_message}",
                     reply_markup=copy_phone_markup,
                 )
@@ -6077,7 +6119,8 @@ def init_db():
                     ADD COLUMN IF NOT EXISTS checkbox_receipt_id UUID,
                     ADD COLUMN IF NOT EXISTS checkbox_status TEXT,
                     ADD COLUMN IF NOT EXISTS checkbox_error TEXT,
-                    ADD COLUMN IF NOT EXISTS fiscalized_at TIMESTAMPTZ
+                    ADD COLUMN IF NOT EXISTS fiscalized_at TIMESTAMPTZ,
+                    ADD COLUMN IF NOT EXISTS liqpay_payment_id TEXT
                 """
             )
 
@@ -6610,7 +6653,8 @@ def get_recent_invoices(limit: int = 10):
             cursor.execute(
                 """
                 SELECT order_id, phone, amount, currency, description,
-                       status, short_code, created_by_name, created_at
+                       status, short_code, created_by_name, created_at,
+                       liqpay_payment_id
                 FROM invoices
                 ORDER BY created_at DESC
                 LIMIT %s
@@ -6909,6 +6953,7 @@ def show_history(message):
         short_code,
         created_by_name,
         created_at,
+        liqpay_payment_id,
     ) in invoices:
 
         phone_for_display = display_phone(phone)
@@ -6921,6 +6966,7 @@ def show_history(message):
             f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
             f"Описание: {html.escape(description)}\n"
             f"Создал: {html.escape(created_by_name)}\n"
+            f"ID оплаты LiqPay: <code>{html.escape(liqpay_payment_id or '—')}</code>\n"
             f"ID: <code>{html.escape(order_id)}</code>"
         )
 
@@ -8009,6 +8055,12 @@ def liqpay_callback():
 
     order_id = str(callback_data.get("order_id", ""))
     status = str(callback_data.get("status", "unknown"))
+    liqpay_payment_id = str(
+        callback_data.get("payment_id")
+        or callback_data.get("transaction_id")
+        or callback_data.get("liqpay_order_id")
+        or ""
+    ) or None
 
     if not order_id:
 
@@ -8021,12 +8073,14 @@ def liqpay_callback():
             cursor.execute(
                 """
                 UPDATE invoices
-                SET status = %s, updated_at = NOW()
+                SET status = %s,
+                    liqpay_payment_id = COALESCE(%s, liqpay_payment_id),
+                    updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
                           keycrm_order_id
                 """,
-                (status, order_id),
+                (status, liqpay_payment_id, order_id),
             )
 
             updated_invoice = cursor.fetchone()
@@ -8036,6 +8090,11 @@ def liqpay_callback():
         amount, currency, phone, description, items, keycrm_order_id = updated_invoice
         phone_for_display = display_phone(phone)
         product_names = format_product_names(items, description)
+        payment_id_line = (
+            f"ID оплаты LiqPay: <code>{html.escape(liqpay_payment_id)}</code>\n"
+            if liqpay_payment_id
+            else ""
+        )
 
         if keycrm_order_id:
 
@@ -8114,6 +8173,7 @@ def liqpay_callback():
                     f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
                     f"Товар: {html.escape(product_names)}\n"
                     f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
+                    f"{payment_id_line}"
                     f"{checkbox_message}",
                     reply_markup=copy_phone_markup,
                 )
