@@ -2830,13 +2830,23 @@ def store_create_keycrm_order(
     items: list,
     subtotal: Decimal,
     total: Decimal,
+    payment_type: str,
+    payment_amount: Decimal,
 ):
+
+    payment_label = (
+        "Передоплата 150 грн"
+        if payment_type == "prepay"
+        else "Повна оплата LiqPay"
+    )
 
     comment_lines = [
         "Замовлення з сайту Flawless",
         f"Сума до знижки: {subtotal:.2f} UAH",
         f"Знижка: {(subtotal - total):.2f} UAH",
         f"До сплати: {total:.2f} UAH",
+        f"Спосіб оплати: {payment_label}",
+        f"Сума LiqPay: {payment_amount:.2f} UAH",
     ]
 
     if delivery.get("comment"):
@@ -2945,6 +2955,11 @@ def store_checkout():
         city = str(delivery.get("city") or "").strip()
         warehouse = str(delivery.get("warehouse") or "").strip()
         comment = str(delivery.get("comment") or "").strip()
+        payment_type = str(payload.get("paymentType") or "full").strip()
+
+        if payment_type not in {"full", "prepay"}:
+
+            payment_type = "full"
 
         if len(name) < 2:
 
@@ -2965,12 +2980,19 @@ def store_checkout():
             "comment": comment,
         }
         items, subtotal, total = store_prepare_items(payload.get("items"))
+        payment_amount = (
+            min(total, Decimal("150.00"))
+            if payment_type == "prepay"
+            else total
+        ).quantize(Decimal("0.01"))
         crm_order = store_create_keycrm_order(
             customer,
             delivery,
             items,
             subtotal,
             total,
+            payment_type,
+            payment_amount,
         )
         keycrm_order_id = crm_order.get("id")
 
@@ -2980,9 +3002,8 @@ def store_checkout():
 
         description = ", ".join(item["name"] for item in items)[:255]
         order_id, invoice_result = create_invoice(
-            amount=f"{total:.2f}",
+            amount=f"{payment_amount:.2f}",
             description=description,
-            phone=phone,
         )
         href = (
             invoice_result.get("href")
@@ -2995,25 +3016,46 @@ def store_checkout():
             raise RuntimeError("LiqPay не повернув посилання на оплату")
 
         short_code = make_short_code()
-        invoice_items = [
-            {
-                "id": item["product_id"],
-                "offer_id": item["offer_id"],
-                "name": item["name"],
-                "fiscal_name": item["fiscal_name"],
-                "price": float(item["price"]),
-                "original_price": float(item["original_price"]),
-                "discount_percent": float(item["discount_percent"]),
-                "sku": item["sku"],
-                "properties": item["properties"],
-            }
-            for item in items
-        ]
+        if payment_type == "prepay":
+
+            invoice_items = [
+                {
+                    "id": "prepayment",
+                    "offer_id": "",
+                    "name": f"Передоплата за замовлення: {description}",
+                    "fiscal_name": "Передоплата за замовлення",
+                    "price": float(payment_amount),
+                    "original_price": float(payment_amount),
+                    "discount_percent": 0,
+                    "sku": "",
+                    "properties": [
+                        {"name": "Повна сума замовлення", "value": f"{total:.2f} UAH"},
+                        {"name": "Спосіб оплати", "value": "Передоплата 150 грн"},
+                    ],
+                }
+            ]
+
+        else:
+
+            invoice_items = [
+                {
+                    "id": item["product_id"],
+                    "offer_id": item["offer_id"],
+                    "name": item["name"],
+                    "fiscal_name": item["fiscal_name"],
+                    "price": float(item["price"]),
+                    "original_price": float(item["original_price"]),
+                    "discount_percent": float(item["discount_percent"]),
+                    "sku": item["sku"],
+                    "properties": item["properties"],
+                }
+                for item in items
+            ]
         save_invoice(
             order_id=order_id,
             invoice_id=invoice_result.get("invoice_id"),
             phone=phone,
-            amount=f"{total:.2f}",
+            amount=f"{payment_amount:.2f}",
             description=description,
             href=href,
             short_code=short_code,
@@ -3035,6 +3077,8 @@ def store_checkout():
                 "subtotal": float(subtotal),
                 "discount": float(subtotal - total),
                 "total": float(total),
+                "payment_type": payment_type,
+                "payment_amount": float(payment_amount),
                 "payment_url": href,
             }
         )
