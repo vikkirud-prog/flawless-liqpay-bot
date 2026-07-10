@@ -249,6 +249,55 @@ def extract_phone(text: str):
 
     return None
 
+def extract_liqpay_callback_phone(callback_data: dict) -> str:
+
+    if not isinstance(callback_data, dict):
+
+        return ""
+
+    phone_keys = {
+        "phone",
+        "sender_phone",
+        "customer_phone",
+        "payer_phone",
+        "client_phone",
+        "card_phone",
+    }
+
+    def walk(value):
+
+        if isinstance(value, dict):
+
+            for key, nested_value in value.items():
+
+                if str(key).lower() in phone_keys:
+
+                    phone = clean_phone(str(nested_value or ""))
+
+                    if phone:
+
+                        return phone
+
+                phone = walk(nested_value)
+
+                if phone:
+
+                    return phone
+
+        if isinstance(value, list):
+
+            for item in value:
+
+                phone = walk(item)
+
+                if phone:
+
+                    return phone
+
+        return ""
+
+    return walk(callback_data)
+
 def make_signature(data_b64: str) -> str:
 
     raw = LIQPAY_PRIVATE_KEY + data_b64 + LIQPAY_PRIVATE_KEY
@@ -3071,6 +3120,7 @@ def liqpay_callback():
         or callback_data.get("liqpay_order_id")
         or ""
     ) or None
+    payer_phone = extract_liqpay_callback_phone(callback_data)
 
     if not order_id:
 
@@ -3085,12 +3135,16 @@ def liqpay_callback():
                 UPDATE invoices
                 SET status = %s,
                     liqpay_payment_id = COALESCE(%s, liqpay_payment_id),
+                    phone = CASE
+                        WHEN COALESCE(phone, '') = '' AND %s <> '' THEN %s
+                        ELSE phone
+                    END,
                     updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
                           keycrm_order_id
                 """,
-                (status, liqpay_payment_id, order_id),
+                (status, liqpay_payment_id, payer_phone, payer_phone, order_id),
             )
 
             updated_invoice = cursor.fetchone()
@@ -3519,6 +3573,55 @@ def extract_phone(text: str):
         return phones[0]
 
     return None
+
+def extract_liqpay_callback_phone(callback_data: dict) -> str:
+
+    if not isinstance(callback_data, dict):
+
+        return ""
+
+    phone_keys = {
+        "phone",
+        "sender_phone",
+        "customer_phone",
+        "payer_phone",
+        "client_phone",
+        "card_phone",
+    }
+
+    def walk(value):
+
+        if isinstance(value, dict):
+
+            for key, nested_value in value.items():
+
+                if str(key).lower() in phone_keys:
+
+                    phone = clean_phone(str(nested_value or ""))
+
+                    if phone:
+
+                        return phone
+
+                phone = walk(nested_value)
+
+                if phone:
+
+                    return phone
+
+        if isinstance(value, list):
+
+            for item in value:
+
+                phone = walk(item)
+
+                if phone:
+
+                    return phone
+
+        return ""
+
+    return walk(callback_data)
 
 def make_signature(data_b64: str) -> str:
 
@@ -5865,6 +5968,7 @@ def liqpay_callback():
         or callback_data.get("liqpay_order_id")
         or ""
     ) or None
+    payer_phone = extract_liqpay_callback_phone(callback_data)
 
     if not order_id:
 
@@ -5879,12 +5983,16 @@ def liqpay_callback():
                 UPDATE invoices
                 SET status = %s,
                     liqpay_payment_id = COALESCE(%s, liqpay_payment_id),
+                    phone = CASE
+                        WHEN COALESCE(phone, '') = '' AND %s <> '' THEN %s
+                        ELSE phone
+                    END,
                     updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
                           keycrm_order_id
                 """,
-                (status, liqpay_payment_id, order_id),
+                (status, liqpay_payment_id, payer_phone, payer_phone, order_id),
             )
 
             updated_invoice = cursor.fetchone()
@@ -6289,6 +6397,55 @@ def extract_phone(text: str):
         return phones[0]
 
     return None
+
+def extract_liqpay_callback_phone(callback_data: dict) -> str:
+
+    if not isinstance(callback_data, dict):
+
+        return ""
+
+    phone_keys = {
+        "phone",
+        "sender_phone",
+        "customer_phone",
+        "payer_phone",
+        "client_phone",
+        "card_phone",
+    }
+
+    def walk(value):
+
+        if isinstance(value, dict):
+
+            for key, nested_value in value.items():
+
+                if str(key).lower() in phone_keys:
+
+                    phone = clean_phone(str(nested_value or ""))
+
+                    if phone:
+
+                        return phone
+
+                phone = walk(nested_value)
+
+                if phone:
+
+                    return phone
+
+        if isinstance(value, list):
+
+            for item in value:
+
+                phone = walk(item)
+
+                if phone:
+
+                    return phone
+
+        return ""
+
+    return walk(callback_data)
 
 def make_signature(data_b64: str) -> str:
 
@@ -8149,6 +8306,7 @@ def liqpay_callback():
         or callback_data.get("liqpay_order_id")
         or ""
     ) or None
+    payer_phone = extract_liqpay_callback_phone(callback_data)
 
     if not order_id:
 
@@ -8163,12 +8321,16 @@ def liqpay_callback():
                 UPDATE invoices
                 SET status = %s,
                     liqpay_payment_id = COALESCE(%s, liqpay_payment_id),
+                    phone = CASE
+                        WHEN COALESCE(phone, '') = '' AND %s <> '' THEN %s
+                        ELSE phone
+                    END,
                     updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
                           keycrm_order_id
                 """,
-                (status, liqpay_payment_id, order_id),
+                (status, liqpay_payment_id, payer_phone, payer_phone, order_id),
             )
 
             updated_invoice = cursor.fetchone()
