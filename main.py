@@ -189,6 +189,16 @@ def display_phone(phone: str) -> str:
 
     return digits
 
+def phone_message_line(phone: str) -> str:
+
+    phone_for_display = display_phone(phone)
+
+    if not phone_for_display:
+
+        return ""
+
+    return f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
+
 def format_product_names(items, description: str) -> str:
 
     if isinstance(items, str):
@@ -277,7 +287,7 @@ def liqpay_request(params: dict) -> dict:
 
     return result
 
-def create_invoice(phone: str, amount: str, description: str) -> tuple[str, dict]:
+def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str, dict]:
 
     order_id = f"flawless_{int(time.time())}"
 
@@ -297,13 +307,15 @@ def create_invoice(phone: str, amount: str, description: str) -> tuple[str, dict
 
         "order_id": order_id,
 
-        "phone": phone,
-
         "language": "uk",
 
         "server_url": f"{WEBHOOK_URL}/liqpay/callback",
 
     }
+
+    if phone:
+
+        params["phone"] = phone
 
     return order_id, liqpay_request(params)
 
@@ -1419,7 +1431,7 @@ def confirm_refund_payment(call):
     bot.send_message(
         call.message.chat.id,
         "✅ <b>Возврат принят LiqPay</b>\n"
-        f"Телефон: <code>{html.escape(display_phone(phone))}</code>\n"
+        f"{phone_message_line(phone)}"
         f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
         f"{checkbox_message}"
         f"{wait_message}",
@@ -1466,7 +1478,7 @@ def show_history(message):
             f"<b>{created_at.astimezone().strftime('%d.%m.%Y %H:%M')}</b>\n"
             f"{status_label(status)}\n"
             f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
-            f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
+            f"{phone_message_line(phone)}"
             f"Описание: {html.escape(description)}\n"
             f"Создал: {html.escape(created_by_name)}\n"
             f"ID оплаты LiqPay: <code>{html.escape(liqpay_payment_id or '—')}</code>\n"
@@ -1478,14 +1490,17 @@ def show_history(message):
             item += f"\n{html.escape(payment_link)}"
 
         copy_markup = telebot.types.InlineKeyboardMarkup()
-        copy_markup.add(
-            telebot.types.InlineKeyboardButton(
-                text=f"📋 Копировать {phone_for_display}",
-                copy_text=telebot.types.CopyTextButton(
-                    text=phone_for_display,
-                ),
+
+        if phone_for_display:
+
+            copy_markup.add(
+                telebot.types.InlineKeyboardButton(
+                    text=f"📋 Копировать {phone_for_display}",
+                    copy_text=telebot.types.CopyTextButton(
+                        text=phone_for_display,
+                    ),
+                )
             )
-        )
 
         if status in {"unpaid", "invoice_wait", "wait_accept"}:
 
@@ -1617,24 +1632,19 @@ def keep_invoice(call):
 
 def ask_phone(message):
 
-    user_steps[message.chat.id] = {"step": "phone"}
+    user_steps[message.chat.id] = {
+        "step": "item_price",
+        "phone": "",
+        "items": [],
+    }
 
     bot.send_message(
-
         message.chat.id,
-
-        "Введите номер телефона клиента:\n"
-
-        "<code>0939325197</code>\n\n"
-
-        "Или вставьте целиком реквизиты Новой почты — "
-        "бот сам найдет в них номер.\n\n"
-
-        "Можно с плюсом, пробелами или 380 — бот сам исправит.\n"
-
-        "Для отмены напиши: <code>отмена</code>"
-
+        "Номер телефона клиента сейчас не спрашиваем.\n"
+        "Создаём инвойс без привязки к телефону.",
     )
+
+    ask_item_price(message.chat.id, 1)
 
 @bot.message_handler(func=lambda message: message.chat.id in user_steps)
 
@@ -1896,13 +1906,9 @@ def handle_invoice_steps(message):
                 f"Ошибка: <code>{html.escape(str(e))}</code>",
             )
 
-        phone_for_display = display_phone(phone)
-
         msg = (
 
             "✅ <b>Инвойс создан</b>\n\n"
-
-            f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
 
             f"Сумма: <b>{html.escape(amount)} {html.escape(CURRENCY)}</b>\n"
 
@@ -2899,9 +2905,9 @@ def store_checkout():
 
         description = ", ".join(item["name"] for item in items)[:255]
         order_id, invoice_result = create_invoice(
-            phone,
-            f"{total:.2f}",
-            description,
+            amount=f"{total:.2f}",
+            description=description,
+            phone=phone,
         )
         href = (
             invoice_result.get("href")
@@ -3139,20 +3145,24 @@ def liqpay_callback():
 
             try:
 
-                copy_phone_markup = telebot.types.InlineKeyboardMarkup()
-                copy_phone_markup.add(
-                    telebot.types.InlineKeyboardButton(
-                        text=f"📋 Копировать {phone_for_display}",
-                        copy_text=telebot.types.CopyTextButton(
-                            text=phone_for_display,
-                        ),
+                copy_phone_markup = None
+
+                if phone_for_display:
+
+                    copy_phone_markup = telebot.types.InlineKeyboardMarkup()
+                    copy_phone_markup.add(
+                        telebot.types.InlineKeyboardButton(
+                            text=f"📋 Копировать {phone_for_display}",
+                            copy_text=telebot.types.CopyTextButton(
+                                text=phone_for_display,
+                            ),
+                        )
                     )
-                )
 
                 bot.send_message(
                     user_id,
                     "✅ <b>Инвойс оплачен</b>\n"
-                    f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
+                    f"{phone_message_line(phone)}"
                     f"Товар: {html.escape(product_names)}\n"
                     f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
                     f"{payment_id_line}"
@@ -3430,6 +3440,16 @@ def display_phone(phone: str) -> str:
 
     return digits
 
+def phone_message_line(phone: str) -> str:
+
+    phone_for_display = display_phone(phone)
+
+    if not phone_for_display:
+
+        return ""
+
+    return f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
+
 def format_product_names(items, description: str) -> str:
 
     if isinstance(items, str):
@@ -3518,7 +3538,7 @@ def liqpay_request(params: dict) -> dict:
 
     return result
 
-def create_invoice(phone: str, amount: str, description: str) -> tuple[str, dict]:
+def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str, dict]:
 
     order_id = f"flawless_{int(time.time())}"
 
@@ -3538,13 +3558,15 @@ def create_invoice(phone: str, amount: str, description: str) -> tuple[str, dict
 
         "order_id": order_id,
 
-        "phone": phone,
-
         "language": "uk",
 
         "server_url": f"{WEBHOOK_URL}/liqpay/callback",
 
     }
+
+    if phone:
+
+        params["phone"] = phone
 
     return order_id, liqpay_request(params)
 
@@ -4644,7 +4666,7 @@ def confirm_refund_payment(call):
     bot.send_message(
         call.message.chat.id,
         "✅ <b>Возврат принят LiqPay</b>\n"
-        f"Телефон: <code>{html.escape(display_phone(phone))}</code>\n"
+        f"{phone_message_line(phone)}"
         f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
         f"{checkbox_message}"
         f"{wait_message}",
@@ -4691,7 +4713,7 @@ def show_history(message):
             f"<b>{created_at.astimezone().strftime('%d.%m.%Y %H:%M')}</b>\n"
             f"{status_label(status)}\n"
             f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
-            f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
+            f"{phone_message_line(phone)}"
             f"Описание: {html.escape(description)}\n"
             f"Создал: {html.escape(created_by_name)}\n"
             f"ID оплаты LiqPay: <code>{html.escape(liqpay_payment_id or '—')}</code>\n"
@@ -4703,14 +4725,17 @@ def show_history(message):
             item += f"\n{html.escape(payment_link)}"
 
         copy_markup = telebot.types.InlineKeyboardMarkup()
-        copy_markup.add(
-            telebot.types.InlineKeyboardButton(
-                text=f"📋 Копировать {phone_for_display}",
-                copy_text=telebot.types.CopyTextButton(
-                    text=phone_for_display,
-                ),
+
+        if phone_for_display:
+
+            copy_markup.add(
+                telebot.types.InlineKeyboardButton(
+                    text=f"📋 Копировать {phone_for_display}",
+                    copy_text=telebot.types.CopyTextButton(
+                        text=phone_for_display,
+                    ),
+                )
             )
-        )
 
         if status in {"unpaid", "invoice_wait", "wait_accept"}:
 
@@ -4842,24 +4867,19 @@ def keep_invoice(call):
 
 def ask_phone(message):
 
-    user_steps[message.chat.id] = {"step": "phone"}
+    user_steps[message.chat.id] = {
+        "step": "item_price",
+        "phone": "",
+        "items": [],
+    }
 
     bot.send_message(
-
         message.chat.id,
-
-        "Введите номер телефона клиента:\n"
-
-        "<code>0939325197</code>\n\n"
-
-        "Или вставьте целиком реквизиты Новой почты — "
-        "бот сам найдет в них номер.\n\n"
-
-        "Можно с плюсом, пробелами или 380 — бот сам исправит.\n"
-
-        "Для отмены напиши: <code>отмена</code>"
-
+        "Номер телефона клиента сейчас не спрашиваем.\n"
+        "Создаём инвойс без привязки к телефону.",
     )
+
+    ask_item_price(message.chat.id, 1)
 
 @bot.message_handler(func=lambda message: message.chat.id in user_steps)
 
@@ -5121,13 +5141,9 @@ def handle_invoice_steps(message):
                 f"Ошибка: <code>{html.escape(str(e))}</code>",
             )
 
-        phone_for_display = display_phone(phone)
-
         msg = (
 
             "✅ <b>Инвойс создан</b>\n\n"
-
-            f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
 
             f"Сумма: <b>{html.escape(amount)} {html.escape(CURRENCY)}</b>\n"
 
@@ -5903,20 +5919,24 @@ def liqpay_callback():
 
             try:
 
-                copy_phone_markup = telebot.types.InlineKeyboardMarkup()
-                copy_phone_markup.add(
-                    telebot.types.InlineKeyboardButton(
-                        text=f"📋 Копировать {phone_for_display}",
-                        copy_text=telebot.types.CopyTextButton(
-                            text=phone_for_display,
-                        ),
+                copy_phone_markup = None
+
+                if phone_for_display:
+
+                    copy_phone_markup = telebot.types.InlineKeyboardMarkup()
+                    copy_phone_markup.add(
+                        telebot.types.InlineKeyboardButton(
+                            text=f"📋 Копировать {phone_for_display}",
+                            copy_text=telebot.types.CopyTextButton(
+                                text=phone_for_display,
+                            ),
+                        )
                     )
-                )
 
                 bot.send_message(
                     user_id,
                     "✅ <b>Инвойс оплачен</b>\n"
-                    f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
+                    f"{phone_message_line(phone)}"
                     f"Товар: {html.escape(product_names)}\n"
                     f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
                     f"{payment_id_line}"
@@ -6170,6 +6190,16 @@ def display_phone(phone: str) -> str:
 
     return digits
 
+def phone_message_line(phone: str) -> str:
+
+    phone_for_display = display_phone(phone)
+
+    if not phone_for_display:
+
+        return ""
+
+    return f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
+
 def format_product_names(items, description: str) -> str:
 
     if isinstance(items, str):
@@ -6258,7 +6288,7 @@ def liqpay_request(params: dict) -> dict:
 
     return result
 
-def create_invoice(phone: str, amount: str, description: str) -> tuple[str, dict]:
+def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str, dict]:
 
     order_id = f"flawless_{int(time.time())}"
 
@@ -6278,13 +6308,15 @@ def create_invoice(phone: str, amount: str, description: str) -> tuple[str, dict
 
         "order_id": order_id,
 
-        "phone": phone,
-
         "language": "uk",
 
         "server_url": f"{WEBHOOK_URL}/liqpay/callback",
 
     }
+
+    if phone:
+
+        params["phone"] = phone
 
     return order_id, liqpay_request(params)
 
@@ -6963,7 +6995,7 @@ def show_history(message):
             f"<b>{created_at.astimezone().strftime('%d.%m.%Y %H:%M')}</b>\n"
             f"{status_label(status)}\n"
             f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
-            f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
+            f"{phone_message_line(phone)}"
             f"Описание: {html.escape(description)}\n"
             f"Создал: {html.escape(created_by_name)}\n"
             f"ID оплаты LiqPay: <code>{html.escape(liqpay_payment_id or '—')}</code>\n"
@@ -6975,14 +7007,17 @@ def show_history(message):
             item += f"\n{html.escape(payment_link)}"
 
         copy_markup = telebot.types.InlineKeyboardMarkup()
-        copy_markup.add(
-            telebot.types.InlineKeyboardButton(
-                text=f"📋 Копировать {phone_for_display}",
-                copy_text=telebot.types.CopyTextButton(
-                    text=phone_for_display,
-                ),
+
+        if phone_for_display:
+
+            copy_markup.add(
+                telebot.types.InlineKeyboardButton(
+                    text=f"📋 Копировать {phone_for_display}",
+                    copy_text=telebot.types.CopyTextButton(
+                        text=phone_for_display,
+                    ),
+                )
             )
-        )
 
         if status in {"unpaid", "invoice_wait", "wait_accept"}:
 
@@ -7114,24 +7149,19 @@ def keep_invoice(call):
 
 def ask_phone(message):
 
-    user_steps[message.chat.id] = {"step": "phone"}
+    user_steps[message.chat.id] = {
+        "step": "item_price",
+        "phone": "",
+        "items": [],
+    }
 
     bot.send_message(
-
         message.chat.id,
-
-        "Введите номер телефона клиента:\n"
-
-        "<code>0939325197</code>\n\n"
-
-        "Или вставьте целиком реквизиты Новой почты — "
-        "бот сам найдет в них номер.\n\n"
-
-        "Можно с плюсом, пробелами или 380 — бот сам исправит.\n"
-
-        "Для отмены напиши: <code>отмена</code>"
-
+        "Номер телефона клиента сейчас не спрашиваем.\n"
+        "Создаём инвойс без привязки к телефону.",
     )
+
+    ask_item_price(message.chat.id, 1)
 
 @bot.message_handler(func=lambda message: message.chat.id in user_steps)
 
@@ -7375,13 +7405,9 @@ def handle_invoice_steps(message):
                 f"Ошибка: <code>{html.escape(str(e))}</code>",
             )
 
-        phone_for_display = display_phone(phone)
-
         msg = (
 
             "✅ <b>Инвойс создан</b>\n\n"
-
-            f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
 
             f"Сумма: <b>{html.escape(amount)} {html.escape(CURRENCY)}</b>\n"
 
@@ -8157,20 +8183,24 @@ def liqpay_callback():
 
             try:
 
-                copy_phone_markup = telebot.types.InlineKeyboardMarkup()
-                copy_phone_markup.add(
-                    telebot.types.InlineKeyboardButton(
-                        text=f"📋 Копировать {phone_for_display}",
-                        copy_text=telebot.types.CopyTextButton(
-                            text=phone_for_display,
-                        ),
+                copy_phone_markup = None
+
+                if phone_for_display:
+
+                    copy_phone_markup = telebot.types.InlineKeyboardMarkup()
+                    copy_phone_markup.add(
+                        telebot.types.InlineKeyboardButton(
+                            text=f"📋 Копировать {phone_for_display}",
+                            copy_text=telebot.types.CopyTextButton(
+                                text=phone_for_display,
+                            ),
+                        )
                     )
-                )
 
                 bot.send_message(
                     user_id,
                     "✅ <b>Инвойс оплачен</b>\n"
-                    f"Телефон: <code>{html.escape(phone_for_display)}</code>\n"
+                    f"{phone_message_line(phone)}"
                     f"Товар: {html.escape(product_names)}\n"
                     f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
                     f"{payment_id_line}"
