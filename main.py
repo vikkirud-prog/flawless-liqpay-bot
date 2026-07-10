@@ -2849,6 +2849,13 @@ def store_create_keycrm_order(
         f"Сума LiqPay: {payment_amount:.2f} UAH",
     ]
 
+    if payment_type == "prepay":
+
+        balance_due = max(total - payment_amount, Decimal("0.00"))
+        comment_lines.append(
+            f"Залишок до оплати при отриманні: {balance_due:.2f} UAH"
+        )
+
     if delivery.get("comment"):
 
         comment_lines.append(f"Коментар: {delivery['comment']}")
