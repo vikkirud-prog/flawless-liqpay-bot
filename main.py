@@ -1958,9 +1958,9 @@ def handle_invoice_steps(message):
         if href:
 
             client_message = (
-                "Ваше замовлення сформоване 🌸\n"
-                "Оплатити можна за посиланням:\n"
-                f"{short_link}"
+                "Ваше замовлення сформоване 🌸 "
+                f"Швидка оплата за посиланням : {short_link}\n"
+                "Або можемо надати реквізити iban"
             )
 
             bot.send_message(
@@ -5193,9 +5193,9 @@ def handle_invoice_steps(message):
         if href:
 
             client_message = (
-                "Ваше замовлення сформоване 🌸\n"
-                "Оплатити можна за посиланням:\n"
-                f"{short_link}"
+                "Ваше замовлення сформоване 🌸 "
+                f"Швидка оплата за посиланням : {short_link}\n"
+                "Або можемо надати реквізити iban"
             )
 
             bot.send_message(
@@ -7457,9 +7457,9 @@ def handle_invoice_steps(message):
         if href:
 
             client_message = (
-                "Ваше замовлення сформоване 🌸\n"
-                "Оплатити можна за посиланням:\n"
-                f"{short_link}"
+                "Ваше замовлення сформоване 🌸 "
+                f"Швидка оплата за посиланням : {short_link}\n"
+                "Або можемо надати реквізити iban"
             )
 
             bot.send_message(
