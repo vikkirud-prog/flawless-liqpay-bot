@@ -20,6 +20,8 @@ import secrets
 
 import uuid
 
+import urllib.parse
+
 import requests
 
 import telebot
@@ -287,6 +289,19 @@ def liqpay_request(params: dict) -> dict:
 
     return result
 
+def liqpay_checkout_url(params: dict) -> str:
+
+    json_string = json.dumps(params, ensure_ascii=False, separators=(",", ":"))
+
+    data_b64 = base64.b64encode(json_string.encode("utf-8")).decode("utf-8")
+
+    signature = make_signature(data_b64)
+
+    return "https://www.liqpay.ua/api/3/checkout?" + urllib.parse.urlencode({
+        "data": data_b64,
+        "signature": signature,
+    })
+
 def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str, dict]:
 
     order_id = f"flawless_{int(time.time())}"
@@ -317,7 +332,14 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
 
         params["phone"] = phone
 
-    return order_id, liqpay_request(params)
+        return order_id, liqpay_request(params)
+
+    params["action"] = "pay"
+
+    return order_id, {
+        "status": "checkout_url",
+        "href": liqpay_checkout_url(params),
+    }
 
 def make_short_code() -> str:
 
@@ -3538,6 +3560,19 @@ def liqpay_request(params: dict) -> dict:
 
     return result
 
+def liqpay_checkout_url(params: dict) -> str:
+
+    json_string = json.dumps(params, ensure_ascii=False, separators=(",", ":"))
+
+    data_b64 = base64.b64encode(json_string.encode("utf-8")).decode("utf-8")
+
+    signature = make_signature(data_b64)
+
+    return "https://www.liqpay.ua/api/3/checkout?" + urllib.parse.urlencode({
+        "data": data_b64,
+        "signature": signature,
+    })
+
 def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str, dict]:
 
     order_id = f"flawless_{int(time.time())}"
@@ -3568,7 +3603,14 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
 
         params["phone"] = phone
 
-    return order_id, liqpay_request(params)
+        return order_id, liqpay_request(params)
+
+    params["action"] = "pay"
+
+    return order_id, {
+        "status": "checkout_url",
+        "href": liqpay_checkout_url(params),
+    }
 
 def make_short_code() -> str:
 
@@ -6288,6 +6330,19 @@ def liqpay_request(params: dict) -> dict:
 
     return result
 
+def liqpay_checkout_url(params: dict) -> str:
+
+    json_string = json.dumps(params, ensure_ascii=False, separators=(",", ":"))
+
+    data_b64 = base64.b64encode(json_string.encode("utf-8")).decode("utf-8")
+
+    signature = make_signature(data_b64)
+
+    return "https://www.liqpay.ua/api/3/checkout?" + urllib.parse.urlencode({
+        "data": data_b64,
+        "signature": signature,
+    })
+
 def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str, dict]:
 
     order_id = f"flawless_{int(time.time())}"
@@ -6318,7 +6373,14 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
 
         params["phone"] = phone
 
-    return order_id, liqpay_request(params)
+        return order_id, liqpay_request(params)
+
+    params["action"] = "pay"
+
+    return order_id, {
+        "status": "checkout_url",
+        "href": liqpay_checkout_url(params),
+    }
 
 def make_short_code() -> str:
 
