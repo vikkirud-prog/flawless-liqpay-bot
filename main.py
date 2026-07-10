@@ -32,6 +32,8 @@ from decimal import Decimal, InvalidOperation
 
 from flask import Flask, request, redirect
 
+from zoneinfo import ZoneInfo
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 LIQPAY_PUBLIC_KEY = os.getenv("LIQPAY_PUBLIC_KEY")
@@ -45,6 +47,8 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").rstrip("/")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 CHECKBOX_LICENSE_KEY = os.getenv("CHECKBOX_LICENSE_KEY", "")
+
+KYIV_TZ = ZoneInfo("Europe/Kyiv")
 
 CHECKBOX_PIN_CODE = os.getenv("CHECKBOX_PIN_CODE", "")
 
@@ -1344,7 +1348,7 @@ def show_refund_search_results(chat_id: int, phone: str):
         }.get(refund_status)
 
         text = (
-            f"<b>{created_at.astimezone().strftime('%d.%m.%Y %H:%M')}</b>\n"
+            f"<b>{created_at.astimezone(KYIV_TZ).strftime('%d.%m.%Y %H:%M')}</b>\n"
             f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
             f"Товар: {html.escape(description)}\n"
             f"ID оплаты LiqPay: <code>{html.escape(liqpay_payment_id or '—')}</code>\n"
@@ -1546,7 +1550,7 @@ def show_history(message):
         payment_link = make_short_link(short_code) if short_code else None
 
         item = (
-            f"<b>{created_at.astimezone().strftime('%d.%m.%Y %H:%M')}</b>\n"
+            f"<b>{created_at.astimezone(KYIV_TZ).strftime('%d.%m.%Y %H:%M')}</b>\n"
             f"{status_label(status)}\n"
             f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
             f"{phone_message_line(phone)}"
@@ -4667,7 +4671,7 @@ def show_refund_search_results(chat_id: int, phone: str):
         }.get(refund_status)
 
         text = (
-            f"<b>{created_at.astimezone().strftime('%d.%m.%Y %H:%M')}</b>\n"
+            f"<b>{created_at.astimezone(KYIV_TZ).strftime('%d.%m.%Y %H:%M')}</b>\n"
             f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
             f"Товар: {html.escape(description)}\n"
             f"ID оплаты LiqPay: <code>{html.escape(liqpay_payment_id or '—')}</code>\n"
@@ -4855,7 +4859,7 @@ def show_history(message):
         payment_link = make_short_link(short_code) if short_code else None
 
         item = (
-            f"<b>{created_at.astimezone().strftime('%d.%m.%Y %H:%M')}</b>\n"
+            f"<b>{created_at.astimezone(KYIV_TZ).strftime('%d.%m.%Y %H:%M')}</b>\n"
             f"{status_label(status)}\n"
             f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
             f"{phone_message_line(phone)}"
@@ -7211,7 +7215,7 @@ def show_history(message):
         payment_link = make_short_link(short_code) if short_code else None
 
         item = (
-            f"<b>{created_at.astimezone().strftime('%d.%m.%Y %H:%M')}</b>\n"
+            f"<b>{created_at.astimezone(KYIV_TZ).strftime('%d.%m.%Y %H:%M')}</b>\n"
             f"{status_label(status)}\n"
             f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
             f"{phone_message_line(phone)}"
