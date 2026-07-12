@@ -357,7 +357,7 @@ def liqpay_checkout_url(params: dict) -> str:
 
 def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str, dict]:
 
-    order_id = f"flawless_{int(time.time())}"
+    order_id = f"flawless_{int(time.time())}_{secrets.token_hex(4)}"
 
     params = {
 
@@ -379,13 +379,9 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
 
         "server_url": f"{WEBHOOK_URL}/liqpay/callback",
 
+        "paytypes": "card",
+
     }
-
-    if phone:
-
-        params["phone"] = phone
-
-        return order_id, liqpay_request(params)
 
     params["action"] = "pay"
 
@@ -3175,8 +3171,6 @@ def liqpay_callback():
         or callback_data.get("liqpay_order_id")
         or ""
     ) or None
-    payer_phone = extract_liqpay_callback_phone(callback_data)
-
     if not order_id:
 
         return "Missing order_id", 400
@@ -3190,19 +3184,45 @@ def liqpay_callback():
                 UPDATE invoices
                 SET status = %s,
                     liqpay_payment_id = COALESCE(%s, liqpay_payment_id),
-                    phone = CASE
-                        WHEN COALESCE(phone, '') = '' AND %s <> '' THEN %s
-                        ELSE phone
-                    END,
                     updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
                           keycrm_order_id
                 """,
-                (status, liqpay_payment_id, payer_phone, payer_phone, order_id),
+                (status, liqpay_payment_id, order_id),
             )
 
             updated_invoice = cursor.fetchone()
+
+    if status in {"reversed", "failure", "error"} and updated_invoice:
+
+        amount, currency, phone, description, items, keycrm_order_id = updated_invoice
+        product_names = format_product_names(items, description)
+        reason = (
+            callback_data.get("err_description")
+            or callback_data.get("err_code")
+            or callback_data.get("result")
+            or callback_data.get("description")
+            or "LiqPay не передав причину"
+        )
+
+        for user_id in ALLOWED_USER_IDS:
+
+            try:
+
+                bot.send_message(
+                    user_id,
+                    "↩️ <b>LiqPay повернув/відхилив платіж</b>\n"
+                    f"Статус: <code>{html.escape(status)}</code>\n"
+                    f"Товар: {html.escape(product_names)}\n"
+                    f"Сума: <b>{amount} {html.escape(currency)}</b>\n"
+                    f"ID оплати LiqPay: <code>{html.escape(liqpay_payment_id or '')}</code>\n"
+                    f"Причина: <code>{html.escape(str(reason))}</code>",
+                )
+
+            except Exception:
+
+                pass
 
     if status == "success" and updated_invoice:
 
@@ -3733,7 +3753,7 @@ def liqpay_checkout_url(params: dict) -> str:
 
 def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str, dict]:
 
-    order_id = f"flawless_{int(time.time())}"
+    order_id = f"flawless_{int(time.time())}_{secrets.token_hex(4)}"
 
     params = {
 
@@ -3755,13 +3775,9 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
 
         "server_url": f"{WEBHOOK_URL}/liqpay/callback",
 
+        "paytypes": "card",
+
     }
-
-    if phone:
-
-        params["phone"] = phone
-
-        return order_id, liqpay_request(params)
 
     params["action"] = "pay"
 
@@ -6023,8 +6039,6 @@ def liqpay_callback():
         or callback_data.get("liqpay_order_id")
         or ""
     ) or None
-    payer_phone = extract_liqpay_callback_phone(callback_data)
-
     if not order_id:
 
         return "Missing order_id", 400
@@ -6038,19 +6052,45 @@ def liqpay_callback():
                 UPDATE invoices
                 SET status = %s,
                     liqpay_payment_id = COALESCE(%s, liqpay_payment_id),
-                    phone = CASE
-                        WHEN COALESCE(phone, '') = '' AND %s <> '' THEN %s
-                        ELSE phone
-                    END,
                     updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
                           keycrm_order_id
                 """,
-                (status, liqpay_payment_id, payer_phone, payer_phone, order_id),
+                (status, liqpay_payment_id, order_id),
             )
 
             updated_invoice = cursor.fetchone()
+
+    if status in {"reversed", "failure", "error"} and updated_invoice:
+
+        amount, currency, phone, description, items, keycrm_order_id = updated_invoice
+        product_names = format_product_names(items, description)
+        reason = (
+            callback_data.get("err_description")
+            or callback_data.get("err_code")
+            or callback_data.get("result")
+            or callback_data.get("description")
+            or "LiqPay не передав причину"
+        )
+
+        for user_id in ALLOWED_USER_IDS:
+
+            try:
+
+                bot.send_message(
+                    user_id,
+                    "↩️ <b>LiqPay повернув/відхилив платіж</b>\n"
+                    f"Статус: <code>{html.escape(status)}</code>\n"
+                    f"Товар: {html.escape(product_names)}\n"
+                    f"Сума: <b>{amount} {html.escape(currency)}</b>\n"
+                    f"ID оплати LiqPay: <code>{html.escape(liqpay_payment_id or '')}</code>\n"
+                    f"Причина: <code>{html.escape(str(reason))}</code>",
+                )
+
+            except Exception:
+
+                pass
 
     if status == "success" and updated_invoice:
 
@@ -6557,7 +6597,7 @@ def liqpay_checkout_url(params: dict) -> str:
 
 def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str, dict]:
 
-    order_id = f"flawless_{int(time.time())}"
+    order_id = f"flawless_{int(time.time())}_{secrets.token_hex(4)}"
 
     params = {
 
@@ -6579,13 +6619,9 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
 
         "server_url": f"{WEBHOOK_URL}/liqpay/callback",
 
+        "paytypes": "card",
+
     }
-
-    if phone:
-
-        params["phone"] = phone
-
-        return order_id, liqpay_request(params)
 
     params["action"] = "pay"
 
@@ -8361,8 +8397,6 @@ def liqpay_callback():
         or callback_data.get("liqpay_order_id")
         or ""
     ) or None
-    payer_phone = extract_liqpay_callback_phone(callback_data)
-
     if not order_id:
 
         return "Missing order_id", 400
@@ -8376,19 +8410,45 @@ def liqpay_callback():
                 UPDATE invoices
                 SET status = %s,
                     liqpay_payment_id = COALESCE(%s, liqpay_payment_id),
-                    phone = CASE
-                        WHEN COALESCE(phone, '') = '' AND %s <> '' THEN %s
-                        ELSE phone
-                    END,
                     updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
                           keycrm_order_id
                 """,
-                (status, liqpay_payment_id, payer_phone, payer_phone, order_id),
+                (status, liqpay_payment_id, order_id),
             )
 
             updated_invoice = cursor.fetchone()
+
+    if status in {"reversed", "failure", "error"} and updated_invoice:
+
+        amount, currency, phone, description, items, keycrm_order_id = updated_invoice
+        product_names = format_product_names(items, description)
+        reason = (
+            callback_data.get("err_description")
+            or callback_data.get("err_code")
+            or callback_data.get("result")
+            or callback_data.get("description")
+            or "LiqPay не передав причину"
+        )
+
+        for user_id in ALLOWED_USER_IDS:
+
+            try:
+
+                bot.send_message(
+                    user_id,
+                    "↩️ <b>LiqPay повернув/відхилив платіж</b>\n"
+                    f"Статус: <code>{html.escape(status)}</code>\n"
+                    f"Товар: {html.escape(product_names)}\n"
+                    f"Сума: <b>{amount} {html.escape(currency)}</b>\n"
+                    f"ID оплати LiqPay: <code>{html.escape(liqpay_payment_id or '')}</code>\n"
+                    f"Причина: <code>{html.escape(str(reason))}</code>",
+                )
+
+            except Exception:
+
+                pass
 
     if status == "success" and updated_invoice:
 
