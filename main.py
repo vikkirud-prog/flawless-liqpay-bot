@@ -365,7 +365,7 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
 
         "public_key": LIQPAY_PUBLIC_KEY,
 
-        "action": "invoice_send",
+        "action": "pay",
 
         "amount": amount,
 
@@ -382,8 +382,6 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
         "paytypes": "card,apay,gpay",
 
     }
-
-    params["action"] = "pay"
 
     return order_id, {
         "status": "checkout_url",
@@ -3761,7 +3759,7 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
 
         "public_key": LIQPAY_PUBLIC_KEY,
 
-        "action": "invoice_send",
+        "action": "pay",
 
         "amount": amount,
 
@@ -3778,8 +3776,6 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
         "paytypes": "card,apay,gpay",
 
     }
-
-    params["action"] = "pay"
 
     return order_id, {
         "status": "checkout_url",
@@ -6605,7 +6601,7 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
 
         "public_key": LIQPAY_PUBLIC_KEY,
 
-        "action": "invoice_send",
+        "action": "pay",
 
         "amount": amount,
 
@@ -6622,8 +6618,6 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
         "paytypes": "card,apay,gpay",
 
     }
-
-    params["action"] = "pay"
 
     return order_id, {
         "status": "checkout_url",
