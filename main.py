@@ -379,7 +379,7 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
 
         "server_url": f"{WEBHOOK_URL}/liqpay/callback",
 
-        "paytypes": "card",
+        "paytypes": "card,apay,gpay,privat24",
 
     }
 
@@ -3775,7 +3775,7 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
 
         "server_url": f"{WEBHOOK_URL}/liqpay/callback",
 
-        "paytypes": "card",
+        "paytypes": "card,apay,gpay,privat24",
 
     }
 
@@ -6619,7 +6619,7 @@ def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str,
 
         "server_url": f"{WEBHOOK_URL}/liqpay/callback",
 
-        "paytypes": "card",
+        "paytypes": "card,apay,gpay,privat24",
 
     }
 
