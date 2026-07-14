@@ -1087,7 +1087,10 @@ def amount_menu():
         one_time_keyboard=True,
     )
 
-    markup.row(telebot.types.KeyboardButton("150"))
+    markup.row(
+        telebot.types.KeyboardButton("150"),
+        telebot.types.KeyboardButton("590"),
+    )
 
     for left_amount, right_amount in (
         ("990", "891"),
@@ -4482,7 +4485,10 @@ def amount_menu():
         one_time_keyboard=True,
     )
 
-    markup.row(telebot.types.KeyboardButton("150"))
+    markup.row(
+        telebot.types.KeyboardButton("150"),
+        telebot.types.KeyboardButton("590"),
+    )
 
     for left_amount, right_amount in (
         ("990", "891"),
@@ -7089,7 +7095,10 @@ def amount_menu():
         one_time_keyboard=True,
     )
 
-    markup.row(telebot.types.KeyboardButton("150"))
+    markup.row(
+        telebot.types.KeyboardButton("150"),
+        telebot.types.KeyboardButton("590"),
+    )
 
     for left_amount, right_amount in (
         ("990", "891"),
