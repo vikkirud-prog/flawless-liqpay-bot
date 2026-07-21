@@ -6350,6 +6350,170 @@ if "store_checkout_live" not in app.view_functions:
         methods=["POST", "OPTIONS"],
     )
 
+
+def claim_store_invoice_for_refund(keycrm_order_id: int):
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                UPDATE invoices
+                SET refund_status = 'processing',
+                    refund_amount = amount,
+                    refund_error = NULL,
+                    refund_requested_at = NOW(),
+                    updated_at = NOW()
+                WHERE keycrm_order_id = %s
+                  AND created_by_name = 'Flawless website'
+                  AND status = 'success'
+                  AND refund_status IS NULL
+                RETURNING order_id, amount, items, checkbox_receipt_id
+                """,
+                (keycrm_order_id,),
+            )
+
+            return cursor.fetchone()
+
+
+def keycrm_cancelled_status_ids() -> set[int]:
+
+    configured = {
+        int(value.strip())
+        for value in os.getenv("KEYCRM_CANCELLED_STATUS_IDS", "").split(",")
+        if value.strip().isdigit()
+    }
+
+    if configured:
+
+        return configured
+
+    payload = keycrm_request("order/status", {"limit": 50, "page": 1})
+    statuses = payload.get("data", []) if isinstance(payload, dict) else []
+    cancelled = set()
+
+    for status in statuses:
+
+        name = str(status.get("name") or "").strip().casefold()
+        status_id = str(status.get("id") or "").strip()
+
+        if (
+            status_id.isdigit()
+            and any(
+                marker in name
+                for marker in ("скасован", "отмен", "cancel")
+            )
+        ):
+
+            cancelled.add(int(status_id))
+
+    return cancelled
+
+
+def refund_cancelled_store_order(keycrm_order_id: int) -> str:
+
+    invoice = claim_store_invoice_for_refund(keycrm_order_id)
+
+    if not invoice:
+
+        return "ignored"
+
+    order_id, amount, items, checkbox_receipt_id = invoice
+
+    try:
+
+        result = refund_liqpay_payment(order_id, amount)
+
+        if result.get("result") != "ok":
+
+            raise RuntimeError(
+                result.get("err_description")
+                or result.get("status")
+                or str(result)
+            )
+
+    except Exception as error:
+
+        mark_refund_failed(order_id, str(error))
+        raise
+
+    if not checkbox_receipt_id:
+
+        mark_refund_receipt(
+            order_id,
+            "completed",
+            error="Original Checkbox receipt was not found",
+        )
+        return "refunded_without_receipt"
+
+    mark_refund_receipt(order_id, "receipt_pending")
+
+    try:
+
+        receipt_id = fiscalize_checkbox_return(order_id, items, amount)
+        mark_refund_receipt(order_id, "completed", receipt_id=receipt_id)
+
+    except Exception as error:
+
+        # The existing retry worker will create the return receipt after a
+        # temporary Checkbox error or after the cashier shift is reopened.
+        mark_refund_receipt(
+            order_id,
+            "receipt_error",
+            error=str(error)[:500],
+        )
+
+    return "refunded"
+
+
+@app.route("/api/keycrm/order-status", methods=["POST"])
+def keycrm_order_status_webhook():
+
+    configured_secret = os.getenv("KEYCRM_WEBHOOK_SECRET", "").strip()
+    supplied_secret = request.args.get("secret", "")
+
+    if not configured_secret:
+
+        return {"ok": False, "error": "Webhook is not configured"}, 503
+
+    if not hmac.compare_digest(configured_secret, supplied_secret):
+
+        return {"ok": False, "error": "Unauthorized"}, 401
+
+    payload = request.get_json(silent=True) or {}
+
+    if payload.get("event") != "order.change_order_status":
+
+        return {"ok": True, "result": "ignored"}, 200
+
+    context = payload.get("context") or {}
+    order_id = str(context.get("id") or "").strip()
+    status_id = str(context.get("status_id") or "").strip()
+
+    if not order_id.isdigit() or not status_id.isdigit():
+
+        return {"ok": False, "error": "Invalid KeyCRM payload"}, 400
+
+    if int(status_id) not in keycrm_cancelled_status_ids():
+
+        return {"ok": True, "result": "ignored"}, 200
+
+    try:
+
+        result = refund_cancelled_store_order(int(order_id))
+
+    except Exception as error:
+
+        print(
+            "KeyCRM automatic store refund failed:",
+            int(order_id),
+            str(error),
+        )
+        return {"ok": False, "error": "Refund failed"}, 500
+
+    return {"ok": True, "result": result}, 200
+
 init_db()
 ensure_store_invoice_columns()
 
