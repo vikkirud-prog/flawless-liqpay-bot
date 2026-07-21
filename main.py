@@ -2934,13 +2934,10 @@ def store_create_keycrm_order(
 
     if not awaiting_status_id:
 
-        raise RuntimeError(
-            "У KeyCRM не знайдено статус «Очікуємо передоплату»"
-        )
+        comment_lines.append("Статус оплати: очікуємо передоплату")
 
     payload = {
         "source_id": store_source_id(),
-        "status_id": awaiting_status_id,
         "buyer": {
             "full_name": customer["name"],
             "phone": f"+{customer['phone']}",
@@ -2967,6 +2964,10 @@ def store_create_keycrm_order(
             for item in items
         ],
     }
+
+    if awaiting_status_id:
+
+        payload["status_id"] = awaiting_status_id
 
     return keycrm_post("order", payload)
 
