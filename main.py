@@ -2859,6 +2859,10 @@ def store_prepare_items(requested_items: list) -> tuple[list, Decimal, Decimal]:
                 "offer_id": str(selected_offer.get("id") or ""),
                 "sku": str(selected_offer.get("sku") or ""),
                 "name": str(product.get("name") or "Товар").strip(),
+                "picture": (
+                    str(selected_offer.get("thumbnail_url") or "").strip()
+                    or keycrm_product_image(product)
+                ),
                 "fiscal_name": str(product.get("name") or "Одяг").strip(),
                 "original_price": price,
                 "price": price,
@@ -2960,6 +2964,11 @@ def store_create_keycrm_order(
                 "discount_percent": float(item["discount_percent"]),
                 "quantity": 1,
                 "properties": item["properties"],
+                **(
+                    {"picture": item["picture"]}
+                    if item.get("picture")
+                    else {}
+                ),
             }
             for item in items
         ],
