@@ -2631,6 +2631,78 @@ def keycrm_post(path: str, payload: dict):
 
     return result
 
+def keycrm_put(path: str, payload: dict):
+
+    if not KEYCRM_API_KEY:
+
+        raise RuntimeError("KEYCRM_API_KEY is missing")
+
+    response = requests.put(
+        f"{KEYCRM_API_URL}/{path.lstrip('/')}",
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {KEYCRM_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=30,
+    )
+
+    try:
+
+        result = response.json()
+
+    except Exception:
+
+        result = {}
+
+    if response.status_code >= 400:
+
+        raise RuntimeError(
+            result.get("message")
+            or json.dumps(result, ensure_ascii=False)
+            or "KeyCRM request failed"
+        )
+
+    return result
+
+def keycrm_status_id(kind: str):
+
+    env_name = (
+        "KEYCRM_AWAITING_PREPAYMENT_STATUS_ID"
+        if kind == "awaiting_prepayment"
+        else "KEYCRM_NEW_STATUS_ID"
+    )
+    configured = os.getenv(env_name, "").strip()
+
+    if configured.isdigit():
+
+        return int(configured)
+
+    payload = keycrm_request("order/status", {"limit": 50, "page": 1})
+    statuses = payload.get("data", []) if isinstance(payload, dict) else []
+
+    for status in statuses:
+
+        name = str(status.get("name") or "").strip().casefold()
+
+        if kind == "awaiting_prepayment":
+
+            is_match = (
+                "передоплат" in name
+                and any(marker in name for marker in ("очіку", "ожида", "чека"))
+            )
+
+        else:
+
+            is_match = name in {"новий", "новый", "new"}
+
+        if is_match and str(status.get("id") or "").isdigit():
+
+            return int(status["id"])
+
+    return None
+
 def ensure_store_invoice_columns():
 
     with get_db() as connection:
@@ -2858,8 +2930,17 @@ def store_create_keycrm_order(
 
         comment_lines.append(f"Коментар: {delivery['comment']}")
 
+    awaiting_status_id = keycrm_status_id("awaiting_prepayment")
+
+    if not awaiting_status_id:
+
+        raise RuntimeError(
+            "У KeyCRM не знайдено статус «Очікуємо передоплату»"
+        )
+
     payload = {
         "source_id": store_source_id(),
+        "status_id": awaiting_status_id,
         "buyer": {
             "full_name": customer["name"],
             "phone": f"+{customer['phone']}",
@@ -2920,7 +3001,7 @@ def store_mark_keycrm_paid(keycrm_order_id, amount):
 
         return
 
-    keycrm_post(
+    payment = keycrm_post(
         f"order/{keycrm_order_id}/payment",
         {
             "payment_method": "LiqPay",
@@ -2929,6 +3010,19 @@ def store_mark_keycrm_paid(keycrm_order_id, amount):
             "description": "Оплата на сайті Flawless",
         },
     )
+
+    new_status_id = keycrm_status_id("new")
+
+    if not new_status_id:
+
+        raise RuntimeError("У KeyCRM не знайдено статус «Новий»")
+
+    keycrm_put(
+        f"order/{keycrm_order_id}",
+        {"status_id": new_status_id},
+    )
+
+    return payment
 
 def store_checkout_response(payload, status=200):
 
@@ -3189,7 +3283,7 @@ def liqpay_callback():
                     updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
-                          keycrm_order_id
+                          keycrm_order_id, created_by_name
                 """,
                 (status, liqpay_payment_id, order_id),
             )
@@ -3198,7 +3292,7 @@ def liqpay_callback():
 
     if status in {"reversed", "failure", "error"} and updated_invoice:
 
-        amount, currency, phone, description, items, keycrm_order_id = updated_invoice
+        amount, currency, phone, description, items, keycrm_order_id, created_by_name = updated_invoice
         product_names = format_product_names(items, description)
         reason = (
             callback_data.get("err_description")
@@ -3208,7 +3302,9 @@ def liqpay_callback():
             or "LiqPay не передав причину"
         )
 
-        for user_id in ALLOWED_USER_IDS:
+        for user_id in (
+            [] if created_by_name == "Flawless website" else ALLOWED_USER_IDS
+        ):
 
             try:
 
@@ -3228,7 +3324,7 @@ def liqpay_callback():
 
     if status == "success" and updated_invoice:
 
-        amount, currency, phone, description, items, keycrm_order_id = updated_invoice
+        amount, currency, phone, description, items, keycrm_order_id, created_by_name = updated_invoice
         phone_for_display = display_phone(phone)
         product_names = format_product_names(items, description)
         payment_id_line = (
@@ -3294,7 +3390,9 @@ def liqpay_callback():
                     "в старому інвойсі немає списку товарів."
                 )
 
-        for user_id in ALLOWED_USER_IDS:
+        for user_id in (
+            [] if created_by_name == "Flawless website" else ALLOWED_USER_IDS
+        ):
 
             try:
 
@@ -6059,7 +6157,7 @@ def liqpay_callback():
                     updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
-                          keycrm_order_id
+                          keycrm_order_id, created_by_name
                 """,
                 (status, liqpay_payment_id, order_id),
             )
@@ -6068,7 +6166,7 @@ def liqpay_callback():
 
     if status in {"reversed", "failure", "error"} and updated_invoice:
 
-        amount, currency, phone, description, items, keycrm_order_id = updated_invoice
+        amount, currency, phone, description, items, keycrm_order_id, created_by_name = updated_invoice
         product_names = format_product_names(items, description)
         reason = (
             callback_data.get("err_description")
@@ -6078,7 +6176,9 @@ def liqpay_callback():
             or "LiqPay не передав причину"
         )
 
-        for user_id in ALLOWED_USER_IDS:
+        for user_id in (
+            [] if created_by_name == "Flawless website" else ALLOWED_USER_IDS
+        ):
 
             try:
 
@@ -6098,7 +6198,7 @@ def liqpay_callback():
 
     if status == "success" and updated_invoice:
 
-        amount, currency, phone, description, items, keycrm_order_id = updated_invoice
+        amount, currency, phone, description, items, keycrm_order_id, created_by_name = updated_invoice
         phone_for_display = display_phone(phone)
         product_names = format_product_names(items, description)
         payment_id_line = (
@@ -6164,7 +6264,9 @@ def liqpay_callback():
                     "в старому інвойсі немає списку товарів."
                 )
 
-        for user_id in ALLOWED_USER_IDS:
+        for user_id in (
+            [] if created_by_name == "Flawless website" else ALLOWED_USER_IDS
+        ):
 
             try:
 
@@ -8419,7 +8521,7 @@ def liqpay_callback():
                     updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
-                          keycrm_order_id
+                          keycrm_order_id, created_by_name
                 """,
                 (status, liqpay_payment_id, order_id),
             )
@@ -8428,7 +8530,7 @@ def liqpay_callback():
 
     if status in {"reversed", "failure", "error"} and updated_invoice:
 
-        amount, currency, phone, description, items, keycrm_order_id = updated_invoice
+        amount, currency, phone, description, items, keycrm_order_id, created_by_name = updated_invoice
         product_names = format_product_names(items, description)
         reason = (
             callback_data.get("err_description")
@@ -8438,7 +8540,9 @@ def liqpay_callback():
             or "LiqPay не передав причину"
         )
 
-        for user_id in ALLOWED_USER_IDS:
+        for user_id in (
+            [] if created_by_name == "Flawless website" else ALLOWED_USER_IDS
+        ):
 
             try:
 
@@ -8458,7 +8562,7 @@ def liqpay_callback():
 
     if status == "success" and updated_invoice:
 
-        amount, currency, phone, description, items, keycrm_order_id = updated_invoice
+        amount, currency, phone, description, items, keycrm_order_id, created_by_name = updated_invoice
         phone_for_display = display_phone(phone)
         product_names = format_product_names(items, description)
         payment_id_line = (
@@ -8524,7 +8628,9 @@ def liqpay_callback():
                     "в старому інвойсі немає списку товарів."
                 )
 
-        for user_id in ALLOWED_USER_IDS:
+        for user_id in (
+            [] if created_by_name == "Flawless website" else ALLOWED_USER_IDS
+        ):
 
             try:
 
