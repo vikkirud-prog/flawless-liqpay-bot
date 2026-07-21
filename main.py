@@ -3505,15 +3505,6 @@ threading.Thread(
 
 setup_webhook()
 
-if "keycrm_order_status_webhook_live" not in app.view_functions:
-
-    app.add_url_rule(
-        "/api/keycrm/order-status",
-        endpoint="keycrm_order_status_webhook_live",
-        view_func=keycrm_order_status_webhook,
-        methods=["POST"],
-    )
-
 if __name__ == "__main__":
 
     print(f"Flawless LiqPay bot запущен на порту {PORT}")
@@ -6533,15 +6524,6 @@ threading.Thread(
 ).start()
 
 setup_webhook()
-
-if "keycrm_order_status_webhook_live" not in app.view_functions:
-
-    app.add_url_rule(
-        "/api/keycrm/order-status",
-        endpoint="keycrm_order_status_webhook_live",
-        view_func=keycrm_order_status_webhook,
-        methods=["POST"],
-    )
 
 if __name__ == "__main__":
 
