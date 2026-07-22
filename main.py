@@ -7793,6 +7793,8 @@ def main_menu():
 
     markup.add(telebot.types.KeyboardButton("История"))
 
+    markup.add(telebot.types.KeyboardButton("Возврат"))
+
     return markup
 
 def item_action_menu():
