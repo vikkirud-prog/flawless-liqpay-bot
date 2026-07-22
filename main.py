@@ -2726,7 +2726,14 @@ def ensure_store_invoice_columns():
                 ALTER TABLE invoices
                     ADD COLUMN IF NOT EXISTS keycrm_order_id BIGINT,
                     ADD COLUMN IF NOT EXISTS store_customer JSONB,
-                    ADD COLUMN IF NOT EXISTS delivery_data JSONB
+                    ADD COLUMN IF NOT EXISTS delivery_data JSONB,
+                    ADD COLUMN IF NOT EXISTS store_order_total NUMERIC(12, 2),
+                    ADD COLUMN IF NOT EXISTS store_payment_type TEXT,
+                    ADD COLUMN IF NOT EXISTS store_order_items JSONB,
+                    ADD COLUMN IF NOT EXISTS delivery_checkbox_receipt_id UUID,
+                    ADD COLUMN IF NOT EXISTS delivery_checkbox_status TEXT,
+                    ADD COLUMN IF NOT EXISTS delivery_checkbox_error TEXT,
+                    ADD COLUMN IF NOT EXISTS delivery_fiscalized_at TIMESTAMPTZ
                 """
             )
 
@@ -3000,7 +3007,15 @@ def store_create_keycrm_order(
 
     return keycrm_post("order", payload)
 
-def store_save_details(order_id, keycrm_order_id, customer, delivery):
+def store_save_details(
+    order_id,
+    keycrm_order_id,
+    customer,
+    delivery,
+    total,
+    payment_type,
+    items,
+):
 
     ensure_store_invoice_columns()
 
@@ -3014,6 +3029,9 @@ def store_save_details(order_id, keycrm_order_id, customer, delivery):
                 SET keycrm_order_id = %s,
                     store_customer = %s::jsonb,
                     delivery_data = %s::jsonb,
+                    store_order_total = %s,
+                    store_payment_type = %s,
+                    store_order_items = %s::jsonb,
                     updated_at = NOW()
                 WHERE order_id = %s
                 """,
@@ -3021,6 +3039,9 @@ def store_save_details(order_id, keycrm_order_id, customer, delivery):
                     keycrm_order_id,
                     json.dumps(customer, ensure_ascii=False),
                     json.dumps(delivery, ensure_ascii=False),
+                    total,
+                    payment_type,
+                    json.dumps(items, ensure_ascii=False, default=str),
                     order_id,
                 ),
             )
@@ -3237,6 +3258,9 @@ def store_checkout():
             int(keycrm_order_id),
             customer,
             delivery,
+            total,
+            payment_type,
+            items,
         )
         notify_store_order_created(
             keycrm_order_id,
@@ -6527,6 +6551,243 @@ def keycrm_cancelled_status_ids() -> set[int]:
     return cancelled
 
 
+def keycrm_delivered_status_ids() -> set[int]:
+
+    configured = {
+        int(value.strip())
+        for value in os.getenv("KEYCRM_DELIVERED_STATUS_IDS", "").split(",")
+        if value.strip().isdigit()
+    }
+
+    if configured:
+
+        return configured
+
+    payload = keycrm_request("order/status", {"limit": 50, "page": 1})
+    statuses = payload.get("data", []) if isinstance(payload, dict) else []
+    delivered = set()
+    exact_names = {
+        "отримано",
+        "отриманий",
+        "отримана",
+        "забрано",
+        "забраний",
+        "виконано",
+        "виконаний",
+        "delivered",
+        "completed",
+    }
+
+    for status in statuses:
+
+        name = str(status.get("name") or "").strip().casefold()
+        status_id = str(status.get("id") or "").strip()
+
+        if status_id.isdigit() and (
+            name in exact_names
+            or any(
+                marker in name
+                for marker in (
+                    "отримано клієнтом",
+                    "отриман покупателем",
+                    "успішно доставлено",
+                    "успешно доставлен",
+                )
+            )
+        ):
+
+            delivered.add(int(status_id))
+
+    return delivered
+
+
+def store_invoice_total_from_items(items, fallback) -> Decimal:
+
+    for item in items or []:
+
+        for prop in item.get("properties") or []:
+
+            if str(prop.get("name") or "").strip() != "Повна сума замовлення":
+
+                continue
+
+            value = str(prop.get("value") or "").replace("UAH", "").strip()
+
+            try:
+
+                return Decimal(value).quantize(Decimal("0.01"))
+
+            except (InvalidOperation, ValueError):
+
+                pass
+
+    return Decimal(str(fallback or 0)).quantize(Decimal("0.01"))
+
+
+def store_invoice_product_names(store_items, receipt_items, description) -> str:
+
+    names = [
+        str(item.get("name") or "").strip()
+        for item in store_items or []
+        if str(item.get("name") or "").strip()
+    ]
+
+    if not names:
+
+        names = [
+            str(item.get("name") or "")
+            .replace("Передоплата за замовлення:", "", 1)
+            .strip()
+            for item in receipt_items or []
+            if str(item.get("name") or "").strip()
+        ]
+
+    return ", ".join(names) or str(description or "Товар").strip()
+
+
+def claim_store_delivery_fiscalization(keycrm_order_id: int):
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                UPDATE invoices
+                SET delivery_checkbox_status = 'processing',
+                    delivery_checkbox_error = NULL,
+                    updated_at = NOW()
+                WHERE keycrm_order_id = %s
+                  AND created_by_name = 'Flawless website'
+                  AND status = 'success'
+                  AND (
+                      store_payment_type = 'prepay'
+                      OR EXISTS (
+                          SELECT 1
+                          FROM jsonb_array_elements(COALESCE(items, '[]'::jsonb)) AS item
+                          WHERE item->>'id' = 'prepayment'
+                      )
+                  )
+                  AND delivery_checkbox_receipt_id IS NULL
+                  AND COALESCE(delivery_checkbox_status, 'new')
+                      NOT IN ('processing', 'created')
+                RETURNING order_id, amount, store_order_total,
+                          store_order_items, items, description
+                """,
+                (keycrm_order_id,),
+            )
+
+            return cursor.fetchone()
+
+
+def mark_store_delivery_fiscalization(
+    order_id,
+    status,
+    receipt_id=None,
+    error=None,
+):
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                UPDATE invoices
+                SET delivery_checkbox_status = %s,
+                    delivery_checkbox_receipt_id =
+                        COALESCE(%s, delivery_checkbox_receipt_id),
+                    delivery_checkbox_error = %s,
+                    delivery_fiscalized_at = CASE
+                        WHEN %s = 'created' THEN NOW()
+                        ELSE delivery_fiscalized_at
+                    END,
+                    updated_at = NOW()
+                WHERE order_id = %s
+                """,
+                (status, receipt_id, error, status, order_id),
+            )
+
+
+def fiscalize_delivered_store_order(keycrm_order_id: int) -> str:
+
+    invoice = claim_store_delivery_fiscalization(keycrm_order_id)
+
+    if not invoice:
+
+        return "ignored"
+
+    order_id, prepaid_amount, stored_total, store_items, receipt_items, description = invoice
+    total = (
+        Decimal(str(stored_total)).quantize(Decimal("0.01"))
+        if stored_total is not None
+        else store_invoice_total_from_items(receipt_items, prepaid_amount)
+    )
+    balance = max(
+        total - Decimal(str(prepaid_amount)),
+        Decimal("0.00"),
+    ).quantize(Decimal("0.01"))
+
+    if balance <= 0:
+
+        mark_store_delivery_fiscalization(order_id, "created")
+        return "no_balance"
+
+    product_names = store_invoice_product_names(
+        store_items,
+        receipt_items,
+        description,
+    )
+    final_name = f"Післяплата за {product_names}"[:255]
+    fiscal_items = [
+        {
+            "name": final_name,
+            "fiscal_name": final_name,
+            "price": float(balance),
+        }
+    ]
+
+    try:
+
+        receipt_id = fiscalize_checkbox_receipt(
+            f"{order_id}:delivery",
+            fiscal_items,
+            balance,
+        )
+        mark_store_delivery_fiscalization(
+            order_id,
+            "created",
+            receipt_id=receipt_id,
+        )
+
+    except Exception as error:
+
+        mark_store_delivery_fiscalization(
+            order_id,
+            "error",
+            error=str(error)[:500],
+        )
+        raise
+
+    for user_id in ALLOWED_USER_IDS:
+
+        try:
+
+            bot.send_message(
+                user_id,
+                "📦 <b>Замовлення з сайту отримано</b>\n"
+                f"Замовлення CRM: <b>#{keycrm_order_id}</b>\n"
+                f"Товар: {html.escape(product_names)}\n"
+                f"Фіскалізовано залишок: <b>{balance:.2f} UAH</b>",
+            )
+
+        except Exception:
+
+            pass
+
+    return "fiscalized"
+
+
 def refund_cancelled_store_order(keycrm_order_id: int) -> str:
 
     invoice = claim_store_invoice_for_refund(keycrm_order_id)
@@ -6611,18 +6872,26 @@ def keycrm_order_status_webhook():
 
         return {"ok": False, "error": "Invalid KeyCRM payload"}, 400
 
-    if int(status_id) not in keycrm_cancelled_status_ids():
-
-        return {"ok": True, "result": "ignored"}, 200
+    numeric_status_id = int(status_id)
 
     try:
 
-        result = refund_cancelled_store_order(int(order_id))
+        if numeric_status_id in keycrm_cancelled_status_ids():
+
+            result = refund_cancelled_store_order(int(order_id))
+
+        elif numeric_status_id in keycrm_delivered_status_ids():
+
+            result = fiscalize_delivered_store_order(int(order_id))
+
+        else:
+
+            return {"ok": True, "result": "ignored"}, 200
 
     except Exception as error:
 
         print(
-            "KeyCRM automatic store refund failed:",
+            "KeyCRM store status automation failed:",
             int(order_id),
             str(error),
         )
@@ -6630,12 +6899,70 @@ def keycrm_order_status_webhook():
 
     return {"ok": True, "result": result}, 200
 
+
+def pending_store_delivery_fiscalizations(limit: int = 50) -> list[int]:
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                SELECT keycrm_order_id
+                FROM invoices
+                WHERE created_by_name = 'Flawless website'
+                  AND delivery_checkbox_receipt_id IS NULL
+                  AND delivery_checkbox_status = 'error'
+                  AND keycrm_order_id IS NOT NULL
+                ORDER BY updated_at
+                LIMIT %s
+                """,
+                (limit,),
+            )
+
+            return [int(row[0]) for row in cursor.fetchall()]
+
+
+def store_delivery_fiscalization_retry_worker():
+
+    while True:
+
+        try:
+
+            if checkbox_shift_is_open():
+
+                for keycrm_order_id in pending_store_delivery_fiscalizations():
+
+                    try:
+
+                        fiscalize_delivered_store_order(keycrm_order_id)
+
+                    except Exception as error:
+
+                        print(
+                            "Store delivery fiscalization retry failed:",
+                            keycrm_order_id,
+                            str(error),
+                        )
+
+        except Exception as error:
+
+            print(f"Store delivery retry worker failed: {error}")
+
+        time.sleep(60)
+
 init_db()
 ensure_store_invoice_columns()
 
 threading.Thread(
     target=checkbox_retry_worker,
     name="checkbox-retry",
+    daemon=True,
+).start()
+
+threading.Thread(
+    target=store_delivery_fiscalization_retry_worker,
+    name="store-delivery-fiscalization-retry",
     daemon=True,
 ).start()
 
