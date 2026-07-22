@@ -6377,6 +6377,11 @@ def claim_store_invoice_for_refund(keycrm_order_id: int):
                   AND created_by_name = 'Flawless website'
                   AND status = 'success'
                   AND refund_status IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM jsonb_array_elements(COALESCE(items, '[]'::jsonb)) AS item
+                      WHERE item->>'id' = 'prepayment'
+                  )
                 RETURNING order_id, amount, items, checkbox_receipt_id
                 """,
                 (keycrm_order_id,),
