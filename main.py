@@ -2733,6 +2733,14 @@ def store_source_id() -> int:
 
         raise RuntimeError("У KeyCRM немає джерела замовлень")
 
+    for source in sources:
+
+        name = str(source.get("name") or "").strip().casefold()
+
+        if name in {"сайт", "website", "flawless website"}:
+
+            return int(source["id"])
+
     return int(sources[0]["id"])
 
 def store_prepare_items(requested_items: list) -> tuple[list, Decimal, Decimal]:
