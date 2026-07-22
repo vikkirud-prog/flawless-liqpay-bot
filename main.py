@@ -3505,7 +3505,7 @@ threading.Thread(
 
 setup_webhook()
 
-if __name__ == "__main__":
+if __name__ == "__main__" and False:
 
     print(f"Flawless LiqPay bot запущен на порту {PORT}")
 
@@ -6525,7 +6525,7 @@ threading.Thread(
 
 setup_webhook()
 
-if __name__ == "__main__":
+if __name__ == "__main__" and False:
 
     print(f"Flawless LiqPay bot запущен на порту {PORT}")
 
