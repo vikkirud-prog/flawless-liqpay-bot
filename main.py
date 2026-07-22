@@ -3617,7 +3617,7 @@ threading.Thread(
     daemon=True,
 ).start()
 
-setup_webhook()
+# The webhook is configured once, after the final live app is selected below.
 
 if __name__ == "__main__" and False:
 
@@ -6972,7 +6972,7 @@ threading.Thread(
     daemon=True,
 ).start()
 
-setup_webhook()
+# The webhook is configured once, after the final live app is selected below.
 
 # This second application contains the complete refund and website workflows.
 LIVE_BOT = bot
