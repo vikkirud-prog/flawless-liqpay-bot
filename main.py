@@ -2688,9 +2688,21 @@ def keycrm_status_id(kind: str):
 
         if kind == "awaiting_prepayment":
 
+            waiting_for_payment_names = {
+                "очікування оплати",
+                "очікує оплату",
+                "очікуємо оплату",
+                "ожидание оплаты",
+                "ожидает оплату",
+                "ожидаем оплату",
+                "чекає оплату",
+            }
             is_match = (
-                "передоплат" in name
-                and any(marker in name for marker in ("очіку", "ожида", "чека"))
+                name in waiting_for_payment_names
+                or (
+                    any(marker in name for marker in ("оплат", "передоплат"))
+                    and any(marker in name for marker in ("очіку", "ожида", "чека"))
+                )
             )
 
         else:
