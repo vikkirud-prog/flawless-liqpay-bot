@@ -7992,6 +7992,32 @@ def history_button(message):
 
     show_history(message)
 
+@bot.message_handler(commands=["refund"])
+
+def final_refund_command(message):
+
+    ask_refund_phone(message)
+
+@bot.message_handler(func=lambda message: message.text == "Возврат")
+
+def final_refund_button(message):
+
+    ask_refund_phone(message)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("refund:"))
+
+def final_refund_confirmation(call):
+
+    ask_refund_confirmation(call)
+
+@bot.callback_query_handler(
+    func=lambda call: call.data.startswith("confirm_refund:")
+)
+
+def final_confirm_refund_payment(call):
+
+    confirm_refund_payment(call)
+
 def show_history(message):
 
     if not require_access(message):
