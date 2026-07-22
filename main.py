@@ -3192,7 +3192,7 @@ def store_checkout():
                     "id": "prepayment",
                     "offer_id": "",
                     "name": f"Передоплата за замовлення: {description}",
-                    "fiscal_name": "Передоплата за замовлення",
+                    "fiscal_name": f"Передоплата за замовлення: {description}",
                     "price": float(payment_amount),
                     "original_price": float(payment_amount),
                     "discount_percent": 0,
