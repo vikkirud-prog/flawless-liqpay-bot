@@ -3067,6 +3067,46 @@ def store_checkout_response(payload, status=200):
         },
     )
 
+def notify_store_order_created(
+    keycrm_order_id,
+    customer,
+    delivery,
+    items,
+    total,
+    payment_type,
+    payment_amount,
+):
+
+    payment_label = (
+        "Передоплата 150 грн"
+        if payment_type == "prepay"
+        else "Повна оплата"
+    )
+    product_names = ", ".join(item["name"] for item in items)
+    message = (
+        "🛍 <b>Нове замовлення з сайту</b>\n"
+        f"Замовлення CRM: <b>#{html.escape(str(keycrm_order_id))}</b>\n"
+        f"Клієнт: {html.escape(customer['name'])}\n"
+        f"Телефон: <code>+{html.escape(customer['phone'])}</code>\n"
+        f"Товар: {html.escape(product_names)}\n"
+        f"Сума замовлення: <b>{total:.2f} UAH</b>\n"
+        f"До оплати зараз: <b>{payment_amount:.2f} UAH</b>\n"
+        f"Оплата: {html.escape(payment_label)}\n"
+        f"Доставка: {html.escape(delivery['city'])}, "
+        f"{html.escape(delivery['warehouse'])}\n"
+        "Статус: <b>очікуємо оплату</b>"
+    )
+
+    for user_id in ALLOWED_USER_IDS:
+
+        try:
+
+            bot.send_message(user_id, message)
+
+        except Exception as error:
+
+            print(f"Store order Telegram notification failed: {error}")
+
 def store_checkout():
 
     if request.method == "OPTIONS":
@@ -3198,6 +3238,15 @@ def store_checkout():
             customer,
             delivery,
         )
+        notify_store_order_created(
+            keycrm_order_id,
+            customer,
+            delivery,
+            items,
+            total,
+            payment_type,
+            payment_amount,
+        )
 
         return store_checkout_response(
             {
@@ -3307,22 +3356,29 @@ def liqpay_callback():
 
             cursor.execute(
                 """
+                WITH previous AS (
+                    SELECT status
+                    FROM invoices
+                    WHERE order_id = %s
+                    FOR UPDATE
+                )
                 UPDATE invoices
                 SET status = %s,
                     liqpay_payment_id = COALESCE(%s, liqpay_payment_id),
                     updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
-                          keycrm_order_id, created_by_name
+                          keycrm_order_id, created_by_name,
+                          (SELECT status FROM previous) AS previous_status
                 """,
-                (status, liqpay_payment_id, order_id),
+                (order_id, status, liqpay_payment_id, order_id),
             )
 
             updated_invoice = cursor.fetchone()
 
     if status in {"reversed", "failure", "error"} and updated_invoice:
 
-        amount, currency, phone, description, items, keycrm_order_id, created_by_name = updated_invoice
+        amount, currency, phone, description, items, keycrm_order_id, created_by_name, previous_status = updated_invoice
         product_names = format_product_names(items, description)
         reason = (
             callback_data.get("err_description")
@@ -3354,7 +3410,11 @@ def liqpay_callback():
 
     if status == "success" and updated_invoice:
 
-        amount, currency, phone, description, items, keycrm_order_id, created_by_name = updated_invoice
+        amount, currency, phone, description, items, keycrm_order_id, created_by_name, previous_status = updated_invoice
+
+        if previous_status == "success":
+
+            return "ok", 200
         phone_for_display = display_phone(phone)
         product_names = format_product_names(items, description)
         payment_id_line = (
@@ -3420,9 +3480,7 @@ def liqpay_callback():
                     "в старому інвойсі немає списку товарів."
                 )
 
-        for user_id in (
-            [] if created_by_name == "Flawless website" else ALLOWED_USER_IDS
-        ):
+        for user_id in ALLOWED_USER_IDS:
 
             try:
 
@@ -3440,9 +3498,21 @@ def liqpay_callback():
                         )
                     )
 
+                notification_title = (
+                    "✅ <b>Замовлення з сайту оплачено</b>"
+                    if created_by_name == "Flawless website"
+                    else "✅ <b>Инвойс оплачен</b>"
+                )
+                crm_order_line = (
+                    f"Замовлення CRM: <b>#{keycrm_order_id}</b>\n"
+                    if keycrm_order_id
+                    else ""
+                )
+
                 bot.send_message(
                     user_id,
-                    "✅ <b>Инвойс оплачен</b>\n"
+                    f"{notification_title}\n"
+                    f"{crm_order_line}"
                     f"{phone_message_line(phone)}"
                     f"Товар: {html.escape(product_names)}\n"
                     f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
@@ -6181,22 +6251,29 @@ def liqpay_callback():
 
             cursor.execute(
                 """
+                WITH previous AS (
+                    SELECT status
+                    FROM invoices
+                    WHERE order_id = %s
+                    FOR UPDATE
+                )
                 UPDATE invoices
                 SET status = %s,
                     liqpay_payment_id = COALESCE(%s, liqpay_payment_id),
                     updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
-                          keycrm_order_id, created_by_name
+                          keycrm_order_id, created_by_name,
+                          (SELECT status FROM previous) AS previous_status
                 """,
-                (status, liqpay_payment_id, order_id),
+                (order_id, status, liqpay_payment_id, order_id),
             )
 
             updated_invoice = cursor.fetchone()
 
     if status in {"reversed", "failure", "error"} and updated_invoice:
 
-        amount, currency, phone, description, items, keycrm_order_id, created_by_name = updated_invoice
+        amount, currency, phone, description, items, keycrm_order_id, created_by_name, previous_status = updated_invoice
         product_names = format_product_names(items, description)
         reason = (
             callback_data.get("err_description")
@@ -6228,7 +6305,11 @@ def liqpay_callback():
 
     if status == "success" and updated_invoice:
 
-        amount, currency, phone, description, items, keycrm_order_id, created_by_name = updated_invoice
+        amount, currency, phone, description, items, keycrm_order_id, created_by_name, previous_status = updated_invoice
+
+        if previous_status == "success":
+
+            return "ok", 200
         phone_for_display = display_phone(phone)
         product_names = format_product_names(items, description)
         payment_id_line = (
@@ -6294,9 +6375,7 @@ def liqpay_callback():
                     "в старому інвойсі немає списку товарів."
                 )
 
-        for user_id in (
-            [] if created_by_name == "Flawless website" else ALLOWED_USER_IDS
-        ):
+        for user_id in ALLOWED_USER_IDS:
 
             try:
 
@@ -6314,9 +6393,21 @@ def liqpay_callback():
                         )
                     )
 
+                notification_title = (
+                    "✅ <b>Замовлення з сайту оплачено</b>"
+                    if created_by_name == "Flawless website"
+                    else "✅ <b>Инвойс оплачен</b>"
+                )
+                crm_order_line = (
+                    f"Замовлення CRM: <b>#{keycrm_order_id}</b>\n"
+                    if keycrm_order_id
+                    else ""
+                )
+
                 bot.send_message(
                     user_id,
-                    "✅ <b>Инвойс оплачен</b>\n"
+                    f"{notification_title}\n"
+                    f"{crm_order_line}"
                     f"{phone_message_line(phone)}"
                     f"Товар: {html.escape(product_names)}\n"
                     f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
@@ -8714,22 +8805,29 @@ def liqpay_callback():
 
             cursor.execute(
                 """
+                WITH previous AS (
+                    SELECT status
+                    FROM invoices
+                    WHERE order_id = %s
+                    FOR UPDATE
+                )
                 UPDATE invoices
                 SET status = %s,
                     liqpay_payment_id = COALESCE(%s, liqpay_payment_id),
                     updated_at = NOW()
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
-                          keycrm_order_id, created_by_name
+                          keycrm_order_id, created_by_name,
+                          (SELECT status FROM previous) AS previous_status
                 """,
-                (status, liqpay_payment_id, order_id),
+                (order_id, status, liqpay_payment_id, order_id),
             )
 
             updated_invoice = cursor.fetchone()
 
     if status in {"reversed", "failure", "error"} and updated_invoice:
 
-        amount, currency, phone, description, items, keycrm_order_id, created_by_name = updated_invoice
+        amount, currency, phone, description, items, keycrm_order_id, created_by_name, previous_status = updated_invoice
         product_names = format_product_names(items, description)
         reason = (
             callback_data.get("err_description")
@@ -8761,7 +8859,11 @@ def liqpay_callback():
 
     if status == "success" and updated_invoice:
 
-        amount, currency, phone, description, items, keycrm_order_id, created_by_name = updated_invoice
+        amount, currency, phone, description, items, keycrm_order_id, created_by_name, previous_status = updated_invoice
+
+        if previous_status == "success":
+
+            return "ok", 200
         phone_for_display = display_phone(phone)
         product_names = format_product_names(items, description)
         payment_id_line = (
@@ -8827,9 +8929,7 @@ def liqpay_callback():
                     "в старому інвойсі немає списку товарів."
                 )
 
-        for user_id in (
-            [] if created_by_name == "Flawless website" else ALLOWED_USER_IDS
-        ):
+        for user_id in ALLOWED_USER_IDS:
 
             try:
 
@@ -8847,9 +8947,21 @@ def liqpay_callback():
                         )
                     )
 
+                notification_title = (
+                    "✅ <b>Замовлення з сайту оплачено</b>"
+                    if created_by_name == "Flawless website"
+                    else "✅ <b>Инвойс оплачен</b>"
+                )
+                crm_order_line = (
+                    f"Замовлення CRM: <b>#{keycrm_order_id}</b>\n"
+                    if keycrm_order_id
+                    else ""
+                )
+
                 bot.send_message(
                     user_id,
-                    "✅ <b>Инвойс оплачен</b>\n"
+                    f"{notification_title}\n"
+                    f"{crm_order_line}"
                     f"{phone_message_line(phone)}"
                     f"Товар: {html.escape(product_names)}\n"
                     f"Сумма: <b>{amount} {html.escape(currency)}</b>\n"
