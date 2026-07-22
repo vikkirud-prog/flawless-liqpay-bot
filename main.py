@@ -7998,7 +7998,12 @@ def final_refund_command(message):
 
     ask_refund_phone(message)
 
-@bot.message_handler(func=lambda message: message.text == "Возврат")
+@bot.message_handler(
+    func=lambda message: any(
+        marker in str(message.text or "").strip().casefold()
+        for marker in ("возврат", "повернен")
+    )
+)
 
 def final_refund_button(message):
 
