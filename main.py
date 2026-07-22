@@ -3624,6 +3624,12 @@ if __name__ == "__main__" and False:
     print(f"Flawless LiqPay bot запущен на порту {PORT}")
 
     app.run(host="0.0.0.0", port=PORT)
+
+# Keep the fully configured application above as the single live instance.
+# A legacy duplicate below is still parsed for shared helper definitions, but
+# it must not replace the bot that already has all invoice/refund handlers.
+LIVE_BOT = bot
+LIVE_APP = app
 import os
 
 import json
@@ -6968,6 +6974,10 @@ threading.Thread(
 
 setup_webhook()
 
+# This second application contains the complete refund and website workflows.
+LIVE_BOT = bot
+LIVE_APP = app
+
 if __name__ == "__main__" and False:
 
     print(f"Flawless LiqPay bot запущен на порту {PORT}")
@@ -9375,15 +9385,8 @@ if "store_checkout_live" not in app.view_functions:
         methods=["POST", "OPTIONS"],
     )
 
-init_db()
-ensure_store_invoice_columns()
-
-threading.Thread(
-    target=checkbox_retry_worker,
-    name="checkbox-retry",
-    daemon=True,
-).start()
-
+bot = LIVE_BOT
+app = LIVE_APP
 setup_webhook()
 
 if "keycrm_order_status_webhook_live" not in app.view_functions:
