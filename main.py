@@ -3104,6 +3104,26 @@ def store_create_keycrm_order(
 
         payload["status_id"] = awaiting_status_id
 
+    existing_payload = keycrm_request(
+        "order",
+        {
+            "limit": 1,
+            "page": 1,
+            "filter[source_uuid]": source_uuid,
+        },
+    )
+    existing_orders = (
+        existing_payload.get("data", [])
+        if isinstance(existing_payload, dict)
+        else []
+    )
+
+    for existing_order in existing_orders:
+
+        if str(existing_order.get("source_uuid") or "") == source_uuid:
+
+            return existing_order
+
     return keycrm_post("order", payload)
 
 def store_save_details(
@@ -4125,9 +4145,14 @@ def liqpay_checkout_url(params: dict) -> str:
         "signature": signature,
     })
 
-def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str, dict]:
+def create_invoice(
+    amount: str,
+    description: str,
+    phone: str = "",
+    order_id: str = None,
+) -> tuple[str, dict]:
 
-    order_id = f"flawless_{int(time.time())}_{secrets.token_hex(4)}"
+    order_id = order_id or f"flawless_{int(time.time())}_{secrets.token_hex(4)}"
 
     params = {
 
@@ -7472,9 +7497,14 @@ def liqpay_checkout_url(params: dict) -> str:
         "signature": signature,
     })
 
-def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str, dict]:
+def create_invoice(
+    amount: str,
+    description: str,
+    phone: str = "",
+    order_id: str = None,
+) -> tuple[str, dict]:
 
-    order_id = f"flawless_{int(time.time())}_{secrets.token_hex(4)}"
+    order_id = order_id or f"flawless_{int(time.time())}_{secrets.token_hex(4)}"
 
     params = {
 
