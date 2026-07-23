@@ -2778,7 +2778,14 @@ def store_source_id() -> int:
 
     return int(sources[0]["id"])
 
-def store_prepare_items(requested_items: list) -> tuple[list, Decimal, Decimal]:
+STORE_PROMO_CODES = {
+    "FLAWLESS10": Decimal("10"),
+}
+
+def store_prepare_items(
+    requested_items: list,
+    promo_code: str = "",
+) -> tuple[list, Decimal, Decimal]:
 
     if not isinstance(requested_items, list) or not requested_items:
 
@@ -2928,6 +2935,17 @@ def store_prepare_items(requested_items: list) -> tuple[list, Decimal, Decimal]:
 
             item["discount_percent"] = Decimal("10")
 
+    promo_discount = STORE_PROMO_CODES.get(promo_code, Decimal("0"))
+
+    if promo_discount:
+
+        for item in prepared:
+
+            item["discount_percent"] = max(
+                item["discount_percent"],
+                promo_discount,
+            )
+
     subtotal = Decimal("0")
     total = Decimal("0")
 
@@ -2946,6 +2964,7 @@ def store_checkout_reference(
     delivery: dict,
     requested_items: list,
     payment_type: str,
+    promo_code: str = "",
 ) -> str:
 
     normalized_items = sorted(
@@ -2965,6 +2984,7 @@ def store_checkout_reference(
             "delivery": delivery,
             "items": normalized_items,
             "payment_type": payment_type,
+            "promo_code": promo_code,
             "window": int(time.time() // 1800),
         },
         ensure_ascii=False,
@@ -3006,6 +3026,7 @@ def store_create_keycrm_order(
     total: Decimal,
     payment_type: str,
     payment_amount: Decimal,
+    promo_code: str = "",
 ):
 
     payment_label = (
@@ -3022,6 +3043,10 @@ def store_create_keycrm_order(
         f"Спосіб оплати: {payment_label}",
         f"Сума LiqPay: {payment_amount:.2f} UAH",
     ]
+
+    if promo_code:
+
+        comment_lines.append(f"Промокод: {promo_code}")
 
     if payment_type == "prepay":
 
@@ -3220,10 +3245,15 @@ def store_checkout():
         warehouse = str(delivery.get("warehouse") or "").strip()
         comment = str(delivery.get("comment") or "").strip()
         payment_type = str(payload.get("paymentType") or "full").strip()
+        promo_code = str(payload.get("promoCode") or "").strip().upper()
 
         if payment_type not in {"full", "prepay"}:
 
             payment_type = "full"
+
+        if promo_code and promo_code not in STORE_PROMO_CODES:
+
+            raise ValueError("Промокод не знайдено")
 
         if len(name) < 2:
 
@@ -3249,6 +3279,7 @@ def store_checkout():
             delivery,
             requested_items,
             payment_type,
+            promo_code,
         )
         existing_checkout = store_existing_checkout(order_id)
 
@@ -3276,7 +3307,10 @@ def store_checkout():
                     }
                 )
 
-        items, subtotal, total = store_prepare_items(requested_items)
+        items, subtotal, total = store_prepare_items(
+            requested_items,
+            promo_code,
+        )
         payment_amount = (
             min(total, Decimal("150.00"))
             if payment_type == "prepay"
@@ -3291,6 +3325,7 @@ def store_checkout():
             total,
             payment_type,
             payment_amount,
+            promo_code,
         )
         keycrm_order_id = crm_order.get("id")
 
