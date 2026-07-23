@@ -3136,15 +3136,15 @@ def store_mark_keycrm_paid(keycrm_order_id, amount):
         },
     )
 
-    paid_status_id = keycrm_status_id("paid")
+    new_status_id = keycrm_status_id("new")
 
-    if not paid_status_id:
+    if not new_status_id:
 
-        raise RuntimeError("У KeyCRM не знайдено статус «Оплачено»")
+        raise RuntimeError("У KeyCRM не знайдено статус «Новий»")
 
     keycrm_put(
         f"order/{keycrm_order_id}",
-        {"status_id": paid_status_id},
+        {"status_id": new_status_id},
     )
 
     return payment
