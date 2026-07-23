@@ -355,9 +355,14 @@ def liqpay_checkout_url(params: dict) -> str:
         "signature": signature,
     })
 
-def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str, dict]:
+def create_invoice(
+    amount: str,
+    description: str,
+    phone: str = "",
+    order_id: str = None,
+) -> tuple[str, dict]:
 
-    order_id = f"flawless_{int(time.time())}_{secrets.token_hex(4)}"
+    order_id = order_id or f"flawless_{int(time.time())}_{secrets.token_hex(4)}"
 
     params = {
 
@@ -2668,11 +2673,11 @@ def keycrm_put(path: str, payload: dict):
 
 def keycrm_status_id(kind: str):
 
-    env_name = (
-        "KEYCRM_AWAITING_PREPAYMENT_STATUS_ID"
-        if kind == "awaiting_prepayment"
-        else "KEYCRM_NEW_STATUS_ID"
-    )
+    env_name = {
+        "awaiting_prepayment": "KEYCRM_AWAITING_PREPAYMENT_STATUS_ID",
+        "paid": "KEYCRM_PAID_STATUS_ID",
+        "new": "KEYCRM_NEW_STATUS_ID",
+    }.get(kind, "KEYCRM_NEW_STATUS_ID")
     configured = os.getenv(env_name, "").strip()
 
     if configured.isdigit():
@@ -2704,6 +2709,17 @@ def keycrm_status_id(kind: str):
                     and any(marker in name for marker in ("очіку", "ожида", "чека"))
                 )
             )
+
+        elif kind == "paid":
+
+            is_match = name in {
+                "оплачено",
+                "оплачений",
+                "оплачен",
+                "сплачено",
+                "сплачений",
+                "paid",
+            }
 
         else:
 
@@ -2925,7 +2941,64 @@ def store_prepare_items(requested_items: list) -> tuple[list, Decimal, Decimal]:
 
     return prepared, subtotal, total
 
+def store_checkout_reference(
+    customer: dict,
+    delivery: dict,
+    requested_items: list,
+    payment_type: str,
+) -> str:
+
+    normalized_items = sorted(
+        [
+            {
+                "id": str(item.get("id") or ""),
+                "size": str(item.get("size") or "").strip(),
+                "color": str(item.get("color") or "").strip(),
+            }
+            for item in requested_items or []
+        ],
+        key=lambda item: (item["id"], item["size"], item["color"]),
+    )
+    fingerprint = json.dumps(
+        {
+            "phone": customer["phone"],
+            "delivery": delivery,
+            "items": normalized_items,
+            "payment_type": payment_type,
+            "window": int(time.time() // 1800),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:24]
+
+    return f"flawless_site_{digest}"
+
+def store_existing_checkout(order_id: str):
+
+    ensure_store_invoice_columns()
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                SELECT keycrm_order_id, store_order_total,
+                       store_payment_type, amount, href
+                FROM invoices
+                WHERE order_id = %s
+                  AND created_by_name = 'Flawless website'
+                LIMIT 1
+                """,
+                (order_id,),
+            )
+
+            return cursor.fetchone()
+
 def store_create_keycrm_order(
+    source_uuid: str,
     customer: dict,
     delivery: dict,
     items: list,
@@ -2969,6 +3042,7 @@ def store_create_keycrm_order(
 
     payload = {
         "source_id": store_source_id(),
+        "source_uuid": source_uuid,
         "buyer": {
             "full_name": customer["name"],
             "phone": f"+{customer['phone']}",
@@ -3062,15 +3136,15 @@ def store_mark_keycrm_paid(keycrm_order_id, amount):
         },
     )
 
-    new_status_id = keycrm_status_id("new")
+    paid_status_id = keycrm_status_id("paid")
 
-    if not new_status_id:
+    if not paid_status_id:
 
-        raise RuntimeError("У KeyCRM не знайдено статус «Новий»")
+        raise RuntimeError("У KeyCRM не знайдено статус «Оплачено»")
 
     keycrm_put(
         f"order/{keycrm_order_id}",
-        {"status_id": new_status_id},
+        {"status_id": paid_status_id},
     )
 
     return payment
@@ -3169,13 +3243,47 @@ def store_checkout():
             "warehouse": warehouse,
             "comment": comment,
         }
-        items, subtotal, total = store_prepare_items(payload.get("items"))
+        requested_items = payload.get("items") or []
+        order_id = store_checkout_reference(
+            customer,
+            delivery,
+            requested_items,
+            payment_type,
+        )
+        existing_checkout = store_existing_checkout(order_id)
+
+        if existing_checkout:
+
+            (
+                existing_keycrm_order_id,
+                existing_total,
+                existing_payment_type,
+                existing_amount,
+                existing_href,
+            ) = existing_checkout
+
+            if existing_keycrm_order_id and existing_href:
+
+                return store_checkout_response(
+                    {
+                        "order_id": order_id,
+                        "keycrm_order_id": existing_keycrm_order_id,
+                        "total": float(existing_total or existing_amount),
+                        "payment_type": existing_payment_type or payment_type,
+                        "payment_amount": float(existing_amount),
+                        "payment_url": existing_href,
+                        "reused": True,
+                    }
+                )
+
+        items, subtotal, total = store_prepare_items(requested_items)
         payment_amount = (
             min(total, Decimal("150.00"))
             if payment_type == "prepay"
             else total
         ).quantize(Decimal("0.01"))
         crm_order = store_create_keycrm_order(
+            order_id,
             customer,
             delivery,
             items,
@@ -3194,6 +3302,7 @@ def store_checkout():
         order_id, invoice_result = create_invoice(
             amount=f"{payment_amount:.2f}",
             description=description,
+            order_id=order_id,
         )
         href = (
             invoice_result.get("href")
