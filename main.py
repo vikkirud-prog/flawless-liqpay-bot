@@ -2781,6 +2781,14 @@ def store_source_id() -> int:
 STORE_PROMO_CODES = {
     "FLAWLESS10": Decimal("10"),
 }
+STORE_CATALOG_URL = os.getenv(
+    "STORE_CATALOG_URL",
+    "https://flawless-design.com.ua/api/catalog",
+)
+STORE_CATALOG_PRICE_CACHE = {
+    "expires_at": 0.0,
+    "prices": {},
+}
 
 def normalize_store_option(value: object) -> str:
 
@@ -2790,6 +2798,51 @@ def normalize_store_option(value: object) -> str:
         .replace("—", "-")
         .casefold()
     )
+
+
+def store_catalog_prices() -> dict[str, Decimal]:
+
+    now = time.time()
+    cached_prices = STORE_CATALOG_PRICE_CACHE.get("prices") or {}
+
+    if cached_prices and now < float(
+        STORE_CATALOG_PRICE_CACHE.get("expires_at") or 0
+    ):
+
+        return cached_prices
+
+    try:
+
+        response = requests.get(
+            STORE_CATALOG_URL,
+            headers={"Accept": "application/json"},
+            timeout=20,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        prices = {}
+
+        for product in payload.get("products") or []:
+
+            product_id = str(product.get("id") or "").strip()
+            price = Decimal(str(product.get("price") or 0))
+
+            if product_id.isdigit() and price > 0:
+
+                prices[product_id] = price
+
+        if prices:
+
+            STORE_CATALOG_PRICE_CACHE["prices"] = prices
+            STORE_CATALOG_PRICE_CACHE["expires_at"] = now + 300
+            return prices
+
+    except Exception as error:
+
+        app.logger.warning("Store catalog price sync failed: %s", error)
+
+    return cached_prices
+
 
 def store_prepare_items(
     requested_items: list,
@@ -2848,6 +2901,7 @@ def store_prepare_items(
         ).append(offer)
 
     prepared = []
+    website_prices = store_catalog_prices()
 
     for requested, product_id in zip(requested_items, product_ids):
 
@@ -2904,7 +2958,9 @@ def store_prepare_items(
 
             raise ValueError("Обраний розмір або колір вже недоступний")
 
-        price = Decimal(str(selected_offer.get("price") or product.get("price") or 0))
+        price = website_prices.get(product_id) or Decimal(
+            str(selected_offer.get("price") or product.get("price") or 0)
+        )
 
         if price <= 0:
 
@@ -2939,7 +2995,12 @@ def store_prepare_items(
         )
 
     if len(prepared) == 2:
-        prepared[1]["discount_percent"] = Decimal("10")
+
+        cheaper_index = min(
+            range(2),
+            key=lambda index: prepared[index]["original_price"],
+        )
+        prepared[cheaper_index]["discount_percent"] = Decimal("10")
 
     elif len(prepared) >= 3:
 
@@ -9589,3 +9650,4 @@ if __name__ == "__main__":
     print(f"Flawless LiqPay bot запущен на порту {PORT}")
 
     app.run(host="0.0.0.0", port=PORT)
+STORE_CATALOG_URL
