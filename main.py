@@ -2782,6 +2782,15 @@ STORE_PROMO_CODES = {
     "FLAWLESS10": Decimal("10"),
 }
 
+def normalize_store_option(value: object) -> str:
+
+    return (
+        re.sub(r"\s+", " ", str(value or "").strip())
+        .replace("–", "-")
+        .replace("—", "-")
+        .casefold()
+    )
+
 def store_prepare_items(
     requested_items: list,
     promo_code: str = "",
@@ -2851,6 +2860,8 @@ def store_prepare_items(
 
         requested_size = str(requested.get("size") or "").strip()
         requested_color = str(requested.get("color") or "").strip()
+        requested_size_key = normalize_store_option(requested_size)
+        requested_color_key = normalize_store_option(requested_color)
         selected_offer = None
 
         for offer in offers:
@@ -2876,8 +2887,14 @@ def store_prepare_items(
             )
 
             if (
-                (not requested_size or requested_size == offer_size)
-                and (not requested_color or requested_color == offer_color)
+                (
+                    not requested_size_key
+                    or requested_size_key == normalize_store_option(offer_size)
+                )
+                and (
+                    not requested_color_key
+                    or requested_color_key == normalize_store_option(offer_color)
+                )
             ):
 
                 selected_offer = offer
@@ -2922,12 +2939,7 @@ def store_prepare_items(
         )
 
     if len(prepared) == 2:
-
-        cheaper_index = min(
-            range(2),
-            key=lambda index: prepared[index]["original_price"],
-        )
-        prepared[cheaper_index]["discount_percent"] = Decimal("10")
+        prepared[1]["discount_percent"] = Decimal("10")
 
     elif len(prepared) >= 3:
 
@@ -3103,6 +3115,26 @@ def store_create_keycrm_order(
     if awaiting_status_id:
 
         payload["status_id"] = awaiting_status_id
+
+    existing_payload = keycrm_request(
+        "order",
+        {
+            "limit": 1,
+            "page": 1,
+            "filter[source_uuid]": source_uuid,
+        },
+    )
+    existing_orders = (
+        existing_payload.get("data", [])
+        if isinstance(existing_payload, dict)
+        else []
+    )
+
+    for existing_order in existing_orders:
+
+        if str(existing_order.get("source_uuid") or "") == source_uuid:
+
+            return existing_order
 
     return keycrm_post("order", payload)
 
@@ -3435,7 +3467,7 @@ def store_checkout():
 
     except Exception as error:
 
-        print(f"Store checkout failed: {error}")
+        app.logger.exception("Store checkout failed")
         return store_checkout_response(
             {"error": "Не вдалося оформити замовлення. Спробуйте ще раз."},
             502,
@@ -4125,9 +4157,14 @@ def liqpay_checkout_url(params: dict) -> str:
         "signature": signature,
     })
 
-def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str, dict]:
+def create_invoice(
+    amount: str,
+    description: str,
+    phone: str = "",
+    order_id: str = None,
+) -> tuple[str, dict]:
 
-    order_id = f"flawless_{int(time.time())}_{secrets.token_hex(4)}"
+    order_id = order_id or f"flawless_{int(time.time())}_{secrets.token_hex(4)}"
 
     params = {
 
@@ -7472,9 +7509,14 @@ def liqpay_checkout_url(params: dict) -> str:
         "signature": signature,
     })
 
-def create_invoice(amount: str, description: str, phone: str = "") -> tuple[str, dict]:
+def create_invoice(
+    amount: str,
+    description: str,
+    phone: str = "",
+    order_id: str = None,
+) -> tuple[str, dict]:
 
-    order_id = f"flawless_{int(time.time())}_{secrets.token_hex(4)}"
+    order_id = order_id or f"flawless_{int(time.time())}_{secrets.token_hex(4)}"
 
     params = {
 
