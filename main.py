@@ -3157,6 +3157,7 @@ def store_create_keycrm_order(
         },
         "products": [
             {
+                "offer_id": int(item["offer_id"]),
                 "sku": item["sku"],
                 "name": item["name"],
                 "price": float(item["original_price"]),
