@@ -2780,6 +2780,7 @@ def store_source_id() -> int:
 
 STORE_PROMO_CODES = {
     "FLAWLESS10": Decimal("10"),
+    "FLAWLESS-15": Decimal("15"),
 }
 
 def store_prepare_items(
