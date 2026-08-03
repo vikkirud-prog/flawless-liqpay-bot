@@ -2780,7 +2780,7 @@ def store_source_id() -> int:
 
 STORE_PROMO_CODES = {
     "FLAWLESS10": Decimal("10"),
-    "FLALWLESS-15": Decimal("15"),
+    : Decimal("15"),
 }
 STORE_CATALOG_URL = os.getenv(
     "STORE_CATALOG_URL",
