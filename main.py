@@ -2780,6 +2780,7 @@ def store_source_id() -> int:
 
 STORE_PROMO_CODES = {
     "FLAWLESS10": Decimal("10"),
+    "FLALWLESS-15": Decimal("15"),
 }
 STORE_CATALOG_URL = os.getenv(
     "STORE_CATALOG_URL",
@@ -9651,4 +9652,3 @@ if __name__ == "__main__":
     print(f"Flawless LiqPay bot запущен на порту {PORT}")
 
     app.run(host="0.0.0.0", port=PORT)
-STORE_CATALOG_URL
