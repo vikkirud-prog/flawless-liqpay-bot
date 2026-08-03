@@ -4825,7 +4825,7 @@ def refund_liqpay_payment(order_id: str, amount) -> dict:
     )
 
 def get_paid_invoices_by_phone(phone: str, limit: int = 10):
-
+"FLAWLESS-15": Decimal("15"),
     with get_db() as connection:
 
         with connection.cursor() as cursor:
