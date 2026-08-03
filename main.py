@@ -2780,7 +2780,7 @@ def store_source_id() -> int:
 
 STORE_PROMO_CODES = {
     "FLAWLESS10": Decimal("10"),
-    : Decimal("15"),
+    "FLAWLESS-15": Decimal("15"),
 }
 STORE_CATALOG_URL = os.getenv(
     "STORE_CATALOG_URL",
@@ -4825,7 +4825,7 @@ def refund_liqpay_payment(order_id: str, amount) -> dict:
     )
 
 def get_paid_invoices_by_phone(phone: str, limit: int = 10):
-"FLAWLESS-15": Decimal("15"),
+
     with get_db() as connection:
 
         with connection.cursor() as cursor:
