@@ -140,12 +140,22 @@ def init_db():
                     ADD COLUMN IF NOT EXISTS checkbox_error TEXT,
                     ADD COLUMN IF NOT EXISTS fiscalized_at TIMESTAMPTZ,
                     ADD COLUMN IF NOT EXISTS liqpay_payment_id TEXT,
+                    ADD COLUMN IF NOT EXISTS payment_notified_at TIMESTAMPTZ,
                     ADD COLUMN IF NOT EXISTS refund_status TEXT,
                     ADD COLUMN IF NOT EXISTS refund_amount NUMERIC(12, 2),
                     ADD COLUMN IF NOT EXISTS refund_checkbox_receipt_id UUID,
                     ADD COLUMN IF NOT EXISTS refund_error TEXT,
                     ADD COLUMN IF NOT EXISTS refund_requested_at TIMESTAMPTZ,
                     ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMPTZ
+                """
+            )
+
+            cursor.execute(
+                """
+                UPDATE invoices
+                SET payment_notified_at = COALESCE(updated_at, NOW())
+                WHERE status = 'success'
+                  AND payment_notified_at IS NULL
                 """
             )
 
@@ -3589,7 +3599,7 @@ def liqpay_callback():
             cursor.execute(
                 """
                 WITH previous AS (
-                    SELECT status
+                    SELECT status, payment_notified_at
                     FROM invoices
                     WHERE order_id = %s
                     FOR UPDATE
@@ -3601,7 +3611,9 @@ def liqpay_callback():
                 WHERE order_id = %s
                 RETURNING amount, currency, phone, description, items,
                           keycrm_order_id, created_by_name,
-                          (SELECT status FROM previous) AS previous_status
+                          (SELECT status FROM previous) AS previous_status,
+                          (SELECT payment_notified_at FROM previous)
+                              AS previous_payment_notified_at
                 """,
                 (order_id, status, liqpay_payment_id, order_id),
             )
@@ -3610,7 +3622,7 @@ def liqpay_callback():
 
     if status in {"reversed", "failure", "error"} and updated_invoice:
 
-        amount, currency, phone, description, items, keycrm_order_id, created_by_name, previous_status = updated_invoice
+        amount, currency, phone, description, items, keycrm_order_id, created_by_name, previous_status, previous_payment_notified_at = updated_invoice
         product_names = format_product_names(items, description)
         reason = (
             callback_data.get("err_description")
@@ -3642,11 +3654,30 @@ def liqpay_callback():
 
     if status == "success" and updated_invoice:
 
-        amount, currency, phone, description, items, keycrm_order_id, created_by_name, previous_status = updated_invoice
+        amount, currency, phone, description, items, keycrm_order_id, created_by_name, previous_status, previous_payment_notified_at = updated_invoice
 
-        if previous_status == "success":
+        if previous_payment_notified_at is not None:
 
             return "ok", 200
+
+        with get_db() as connection:
+
+            with connection.cursor() as cursor:
+
+                cursor.execute(
+                    """
+                    UPDATE invoices
+                    SET payment_notified_at = NOW()
+                    WHERE order_id = %s
+                      AND payment_notified_at IS NULL
+                    RETURNING order_id
+                    """,
+                    (order_id,),
+                )
+
+                if not cursor.fetchone():
+
+                    return "ok", 200
         phone_for_display = display_phone(phone)
         product_names = format_product_names(items, description)
         payment_id_line = (
