@@ -2248,6 +2248,13 @@ def keycrm_offer_options(offers: list) -> tuple[list, list, list]:
 
     for offer in offers:
 
+        # KeyCRM does not allow assigning an SKU to an existing variant. Website
+        # checkout creates an SKU-backed twin only for CRM analytics; keep that
+        # technical twin out of the public catalogue to avoid duplicate options.
+        if str(offer.get("sku") or "").strip().startswith("FLW-"):
+
+            continue
+
         properties = offer.get("properties") or []
         variant = {
             "id": str(offer.get("id") or ""),
@@ -2699,18 +2706,69 @@ def ensure_keycrm_offer_sku(offer: dict) -> str:
 
     try:
 
-        keycrm_put(
+        existing_payload = keycrm_request(
             "offers",
             {
-                "offers": [
-                    {
-                        "id": int(offer_id),
-                        "sku": generated_sku,
-                    }
-                ]
+                "limit": 1,
+                "page": 1,
+                "filter[sku]": generated_sku,
             },
         )
-        return generated_sku
+
+        if existing_payload.get("data"):
+
+            return generated_sku
+
+        product_id = str(offer.get("product_id") or "").strip()
+
+        if not product_id.isdigit():
+
+            return ""
+
+        new_offer = {
+            "sku": generated_sku,
+            "price": keycrm_number(offer.get("price")),
+            "purchased_price": keycrm_number(offer.get("purchased_price")),
+            "properties": [
+                {
+                    "name": str(prop.get("name") or "").strip(),
+                    "value": str(prop.get("value") or "").strip(),
+                }
+                for prop in offer.get("properties") or []
+                if isinstance(prop, dict)
+                and str(prop.get("name") or "").strip()
+                and str(prop.get("value") or "").strip()
+            ],
+        }
+        image_url = str(
+            offer.get("image_url")
+            or offer.get("thumbnail_url")
+            or ""
+        ).strip()
+
+        if image_url:
+
+            new_offer["image_url"] = image_url
+
+        keycrm_post(
+            f"products/{product_id}/offers",
+            {"offers": [new_offer]},
+        )
+
+        created_payload = keycrm_request(
+            "offers",
+            {
+                "limit": 1,
+                "page": 1,
+                "filter[sku]": generated_sku,
+            },
+        )
+
+        if created_payload.get("data"):
+
+            return generated_sku
+
+        raise RuntimeError("KeyCRM did not create the SKU-backed offer")
 
     except Exception as error:
 
@@ -6087,6 +6145,10 @@ def keycrm_offer_options(offers: list) -> tuple[list, list, list]:
 
     for offer in offers:
 
+        if str(offer.get("sku") or "").strip().startswith("FLW-"):
+
+            continue
+
         properties = offer.get("properties") or []
         variant = {
             "id": str(offer.get("id") or ""),
@@ -8985,6 +9047,10 @@ def keycrm_offer_options(offers: list) -> tuple[list, list, list]:
     variants = []
 
     for offer in offers:
+
+        if str(offer.get("sku") or "").strip().startswith("FLW-"):
+
+            continue
 
         properties = offer.get("properties") or []
         variant = {
