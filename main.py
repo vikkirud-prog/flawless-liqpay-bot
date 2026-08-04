@@ -2671,6 +2671,46 @@ def keycrm_put(path: str, payload: dict):
 
     return result
 
+def ensure_keycrm_offer_sku(offer: dict) -> str:
+
+    current_sku = str(offer.get("sku") or "").strip()
+
+    if current_sku:
+
+        return current_sku
+
+    offer_id = str(offer.get("id") or "").strip()
+
+    if not offer_id.isdigit():
+
+        return ""
+
+    generated_sku = f"FLW-{offer_id}"
+
+    try:
+
+        keycrm_put(
+            "offers",
+            {
+                "offers": [
+                    {
+                        "id": int(offer_id),
+                        "sku": generated_sku,
+                    }
+                ]
+            },
+        )
+        return generated_sku
+
+    except Exception as error:
+
+        app.logger.warning(
+            "KeyCRM offer SKU assignment failed for offer %s: %s",
+            offer_id,
+            error,
+        )
+        return ""
+
 def keycrm_status_id(kind: str):
 
     env_name = {
@@ -2904,11 +2944,13 @@ def store_prepare_items(
 
             properties.append({"name": "Розмір", "value": requested_size})
 
+        offer_sku = ensure_keycrm_offer_sku(selected_offer)
+
         prepared.append(
             {
                 "product_id": product_id,
                 "offer_id": str(selected_offer.get("id") or ""),
-                "sku": str(selected_offer.get("sku") or ""),
+                "sku": offer_sku,
                 "name": str(product.get("name") or "Товар").strip(),
                 "picture": (
                     str(selected_offer.get("thumbnail_url") or "").strip()
