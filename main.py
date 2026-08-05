@@ -2973,6 +2973,7 @@ STORE_PROMO_CODES = {
 # storefront-only id. Keep the checkout linked to the existing KeyCRM product
 # until the catalogue record is resynchronised.
 STORE_PRODUCT_ID_ALIASES = {
+    "product-1785955631161": "74",
     "лонг на гачках бавовна": "74",
 }
 
@@ -2994,6 +2995,10 @@ def store_prepare_items(
     for item in requested_items:
 
         product_id = str(item.get("id") or "").strip()
+
+        if not product_id.isdigit():
+
+            product_id = STORE_PRODUCT_ID_ALIASES.get(product_id, product_id)
 
         if not product_id.isdigit():
 
