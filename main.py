@@ -7322,8 +7322,20 @@ def pending_store_delivery_fiscalizations(limit: int = 50) -> list[int]:
                 SELECT keycrm_order_id
                 FROM invoices
                 WHERE created_by_name = 'Flawless website'
+                  AND status = 'success'
+                  AND (
+                      store_payment_type = 'prepay'
+                      OR EXISTS (
+                          SELECT 1
+                          FROM jsonb_array_elements(
+                              COALESCE(items, '[]'::jsonb)
+                          ) AS item
+                          WHERE item->>'id' = 'prepayment'
+                      )
+                  )
                   AND delivery_checkbox_receipt_id IS NULL
-                  AND delivery_checkbox_status = 'error'
+                  AND COALESCE(delivery_checkbox_status, 'new')
+                      NOT IN ('processing', 'created')
                   AND keycrm_order_id IS NOT NULL
                 ORDER BY updated_at
                 LIMIT %s
@@ -7342,9 +7354,25 @@ def store_delivery_fiscalization_retry_worker():
 
             if checkbox_shift_is_open():
 
+                delivered_status_ids = keycrm_delivered_status_ids()
+
                 for keycrm_order_id in pending_store_delivery_fiscalizations():
 
                     try:
+
+                        order = keycrm_request(f"order/{keycrm_order_id}")
+                        status_id = str(
+                            order.get("status_id")
+                            or (order.get("status") or {}).get("id")
+                            or ""
+                        ).strip()
+
+                        if (
+                            not status_id.isdigit()
+                            or int(status_id) not in delivered_status_ids
+                        ):
+
+                            continue
 
                         fiscalize_delivered_store_order(keycrm_order_id)
 
