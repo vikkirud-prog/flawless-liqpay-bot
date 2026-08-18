@@ -2973,7 +2973,7 @@ STORE_PROMO_CODES = {
 # storefront-only id. Keep the checkout linked to the existing KeyCRM product
 # until the catalogue record is resynchronised.
 STORE_PRODUCT_ID_ALIASES = {
-    "product-1785955631161": "74",
+    
     "лонг на гачках бавовна": "74",
 }
 
