@@ -2979,6 +2979,30 @@ STORE_PRODUCT_ID_ALIASES = {
     "корсетний лонг натуральна бавовна": "75",
 }
 
+def normalize_store_variant(value: object, kind: str, product_id: str) -> str:
+
+    normalized = str(value or "").strip().casefold()
+    normalized = re.sub(r"[\u2010-\u2015\u2212]", "-", normalized)
+    normalized = re.sub(r"\s+", "", normalized)
+
+    if kind == "size":
+
+        normalized = re.sub(r"[^0-9a-zа-яіїєґ]+", "", normalized)
+        size_aliases = {
+            "хсс": "xss",
+            "хссс": "xsss",
+        }
+        normalized = size_aliases.get(normalized, normalized)
+
+    if kind == "color" and product_id == "75":
+
+        color_aliases = {
+            "шоколад": "шокола",
+        }
+        normalized = color_aliases.get(normalized, normalized)
+
+    return normalized
+
 def store_prepare_items(
     requested_items: list,
     promo_code: str = "",
@@ -3061,6 +3085,16 @@ def store_prepare_items(
 
         requested_size = str(requested.get("size") or "").strip()
         requested_color = str(requested.get("color") or "").strip()
+        normalized_requested_size = normalize_store_variant(
+            requested_size,
+            "size",
+            product_id,
+        )
+        normalized_requested_color = normalize_store_variant(
+            requested_color,
+            "color",
+            product_id,
+        )
         selected_offer = None
 
         for offer in offers:
@@ -3086,8 +3120,22 @@ def store_prepare_items(
             )
 
             if (
-                (not requested_size or requested_size == offer_size)
-                and (not requested_color or requested_color == offer_color)
+                (
+                    not normalized_requested_size
+                    or normalized_requested_size == normalize_store_variant(
+                        offer_size,
+                        "size",
+                        product_id,
+                    )
+                )
+                and (
+                    not normalized_requested_color
+                    or normalized_requested_color == normalize_store_variant(
+                        offer_color,
+                        "color",
+                        product_id,
+                    )
+                )
             ):
 
                 selected_offer = offer
