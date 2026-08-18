@@ -4922,6 +4922,9 @@ def get_recent_invoices(limit: int = 10):
                 FROM invoices
                 ORDER BY created_at DESC
                 LIMIT %s
+                "product-1785955631161": "74",
+                "product-1786306353825": "75",
+                "корсетний лонг натуральна бавовна": "75",
                 """,
                 (limit,),
             )
