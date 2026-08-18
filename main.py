@@ -2973,8 +2973,10 @@ STORE_PROMO_CODES = {
 # storefront-only id. Keep the checkout linked to the existing KeyCRM product
 # until the catalogue record is resynchronised.
 STORE_PRODUCT_ID_ALIASES = {
-    
+    "product-1785955631161": "74",
     "лонг на гачках бавовна": "74",
+    "product-1786306353825": "75",
+    "корсетний лонг натуральна бавовна": "75",
 }
 
 def store_prepare_items(
@@ -4922,9 +4924,6 @@ def get_recent_invoices(limit: int = 10):
                 FROM invoices
                 ORDER BY created_at DESC
                 LIMIT %s
-                "product-1785955631161": "74",
-                "product-1786306353825": "75",
-                "корсетний лонг натуральна бавовна": "75",
                 """,
                 (limit,),
             )
