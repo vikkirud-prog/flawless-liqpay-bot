@@ -3050,22 +3050,38 @@ def store_prepare_items(
             "filter[product_id]": ids_csv,
         },
     )
-    offers_payload = keycrm_request(
-        "offers",
-        {
-            "limit": 50,
-            "page": 1,
-            "include": "product",
-            "filter[product_id]": ids_csv,
-        },
-    )
+    offer_rows = []
+    offer_page = 1
+
+    while True:
+
+        offers_payload = keycrm_request(
+            "offers",
+            {
+                "limit": 50,
+                "page": offer_page,
+                "include": "product",
+                "filter[product_id]": ids_csv,
+            },
+        )
+        offers_batch = offers_payload.get("data", [])
+        offer_rows.extend(offers_batch)
+
+        current_page = int(offers_payload.get("current_page") or offer_page)
+        last_page = int(offers_payload.get("last_page") or current_page)
+
+        if not offers_batch or current_page >= last_page:
+
+            break
+
+        offer_page = current_page + 1
     crm_products = {
         str(product.get("id")): product
         for product in products_payload.get("data", [])
     }
     offers_by_product = {}
 
-    for offer in offers_payload.get("data", []):
+    for offer in offer_rows:
 
         offers_by_product.setdefault(
             str(offer.get("product_id") or ""),
