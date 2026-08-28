@@ -1131,6 +1131,7 @@ def product_menu():
     )
 
     for product_name in (
+        "Лонгслів",
         "Штани шовк на резиночці",
         "Комбінезон",
         "Боді з мереживом літо",
@@ -1138,7 +1139,6 @@ def product_menu():
         "Сукня з комірцем",
         "Комплект піджак брюки та жилет",
         "Боді принтоване",
-        "Лонгслів",
     ):
 
         markup.add(telebot.types.KeyboardButton(product_name))
@@ -5240,6 +5240,7 @@ def product_menu():
     )
 
     for product_name in (
+        "Лонгслів",
         "Штани шовк на резиночці",
         "Комбінезон",
         "Боді з мереживом літо",
@@ -5247,7 +5248,6 @@ def product_menu():
         "Сукня з комірцем",
         "Комплект піджак брюки та жилет",
         "Боді принтоване",
-        "Лонгслів",
     ):
 
         markup.add(telebot.types.KeyboardButton(product_name))
@@ -8421,6 +8421,7 @@ def product_menu():
     )
 
     for product_name in (
+        "Лонгслів",
         "Штани шовк на резиночці",
         "Комбінезон",
         "Боді з мереживом літо",
@@ -8428,7 +8429,6 @@ def product_menu():
         "Сукня з комірцем",
         "Комплект піджак брюки та жилет",
         "Боді принтоване",
-        "Лонгслів",
     ):
 
         markup.add(telebot.types.KeyboardButton(product_name))
