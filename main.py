@@ -1138,6 +1138,7 @@ def product_menu():
         "Сукня з комірцем",
         "Комплект піджак брюки та жилет",
         "Боді принтоване",
+        "Лонгслів",
     ):
 
         markup.add(telebot.types.KeyboardButton(product_name))
@@ -1157,6 +1158,25 @@ def jumpsuit_menu():
         "Комбінезон короткий рукав трикотаж",
         "Комбінезон біфлекс",
         "Комбінезон з вирізом",
+    ):
+
+        markup.add(telebot.types.KeyboardButton(product_name))
+
+    markup.add(telebot.types.KeyboardButton("⬅️ До списку товарів"))
+
+    return markup
+
+def longsleeve_menu():
+
+    markup = telebot.types.ReplyKeyboardMarkup(
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+    for product_name in (
+        "Лонгслів корсет",
+        "Лонгслів виріз асиметрія",
+        "Лонгслів на гачках",
     ):
 
         markup.add(telebot.types.KeyboardButton(product_name))
@@ -1864,6 +1884,16 @@ def handle_invoice_steps(message):
                 chat_id,
                 "Выберите вариант комбинезона:",
                 reply_markup=jumpsuit_menu(),
+            )
+
+            return
+
+        if text == "Лонгслів":
+
+            bot.send_message(
+                chat_id,
+                "Выберите вариант лонгсліва:",
+                reply_markup=longsleeve_menu(),
             )
 
             return
@@ -5217,6 +5247,7 @@ def product_menu():
         "Сукня з комірцем",
         "Комплект піджак брюки та жилет",
         "Боді принтоване",
+        "Лонгслів",
     ):
 
         markup.add(telebot.types.KeyboardButton(product_name))
@@ -5236,6 +5267,25 @@ def jumpsuit_menu():
         "Комбінезон короткий рукав трикотаж",
         "Комбінезон біфлекс",
         "Комбінезон з вирізом",
+    ):
+
+        markup.add(telebot.types.KeyboardButton(product_name))
+
+    markup.add(telebot.types.KeyboardButton("⬅️ До списку товарів"))
+
+    return markup
+
+def longsleeve_menu():
+
+    markup = telebot.types.ReplyKeyboardMarkup(
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+    for product_name in (
+        "Лонгслів корсет",
+        "Лонгслів виріз асиметрія",
+        "Лонгслів на гачках",
     ):
 
         markup.add(telebot.types.KeyboardButton(product_name))
@@ -5926,6 +5976,16 @@ def handle_invoice_steps(message):
                 chat_id,
                 "Выберите вариант комбинезона:",
                 reply_markup=jumpsuit_menu(),
+            )
+
+            return
+
+        if text == "Лонгслів":
+
+            bot.send_message(
+                chat_id,
+                "Выберите вариант лонгсліва:",
+                reply_markup=longsleeve_menu(),
             )
 
             return
@@ -8368,6 +8428,7 @@ def product_menu():
         "Сукня з комірцем",
         "Комплект піджак брюки та жилет",
         "Боді принтоване",
+        "Лонгслів",
     ):
 
         markup.add(telebot.types.KeyboardButton(product_name))
@@ -8387,6 +8448,25 @@ def jumpsuit_menu():
         "Комбінезон короткий рукав трикотаж",
         "Комбінезон біфлекс",
         "Комбінезон з вирізом",
+    ):
+
+        markup.add(telebot.types.KeyboardButton(product_name))
+
+    markup.add(telebot.types.KeyboardButton("⬅️ До списку товарів"))
+
+    return markup
+
+def longsleeve_menu():
+
+    markup = telebot.types.ReplyKeyboardMarkup(
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+    for product_name in (
+        "Лонгслів корсет",
+        "Лонгслів виріз асиметрія",
+        "Лонгслів на гачках",
     ):
 
         markup.add(telebot.types.KeyboardButton(product_name))
@@ -8857,6 +8937,16 @@ def handle_invoice_steps(message):
                 chat_id,
                 "Выберите вариант комбинезона:",
                 reply_markup=jumpsuit_menu(),
+            )
+
+            return
+
+        if text == "Лонгслів":
+
+            bot.send_message(
+                chat_id,
+                "Выберите вариант лонгсліва:",
+                reply_markup=longsleeve_menu(),
             )
 
             return
