@@ -572,6 +572,23 @@ def fiscalize_checkbox_receipt(order_id: str, items: list, amount) -> str:
     )
 
     token = checkbox_signin()
+    existing_response = requests.get(
+        f"{CHECKBOX_API_URL}/receipts/{receipt_id}",
+        headers=checkbox_headers(token),
+        timeout=30,
+    )
+
+    if existing_response.status_code == 200:
+
+        return receipt_id
+
+    if existing_response.status_code != 404:
+
+        raise RuntimeError(
+            existing_response.text[:300]
+            or "Checkbox receipt lookup failed"
+        )
+
     response = requests.post(
         f"{CHECKBOX_API_URL}/receipts/sell",
         headers=checkbox_headers(token),
@@ -596,6 +613,18 @@ def fiscalize_checkbox_receipt(order_id: str, items: list, amount) -> str:
     except Exception:
 
         result = {}
+
+    if response.status_code == 409:
+
+        duplicate_response = requests.get(
+            f"{CHECKBOX_API_URL}/receipts/{receipt_id}",
+            headers=checkbox_headers(token),
+            timeout=30,
+        )
+
+        if duplicate_response.status_code == 200:
+
+            return receipt_id
 
     if response.status_code >= 400:
 
@@ -638,6 +667,23 @@ def fiscalize_checkbox_return(order_id: str, items: list, amount) -> str:
         (Decimal(str(amount)) * 100).quantize(Decimal("1"))
     )
     token = checkbox_signin()
+    existing_response = requests.get(
+        f"{CHECKBOX_API_URL}/receipts/{receipt_id}",
+        headers=checkbox_headers(token),
+        timeout=30,
+    )
+
+    if existing_response.status_code == 200:
+
+        return receipt_id
+
+    if existing_response.status_code != 404:
+
+        raise RuntimeError(
+            existing_response.text[:300]
+            or "Checkbox receipt lookup failed"
+        )
+
     response = requests.post(
         f"{CHECKBOX_API_URL}/receipts/sell",
         headers=checkbox_headers(token),
@@ -662,6 +708,18 @@ def fiscalize_checkbox_return(order_id: str, items: list, amount) -> str:
     except Exception:
 
         result = {}
+
+    if response.status_code == 409:
+
+        duplicate_response = requests.get(
+            f"{CHECKBOX_API_URL}/receipts/{receipt_id}",
+            headers=checkbox_headers(token),
+            timeout=30,
+        )
+
+        if duplicate_response.status_code == 200:
+
+            return receipt_id
 
     if response.status_code >= 400:
 
@@ -2964,7 +3022,8 @@ def ensure_store_invoice_columns():
                     ADD COLUMN IF NOT EXISTS delivery_checkbox_receipt_id UUID,
                     ADD COLUMN IF NOT EXISTS delivery_checkbox_status TEXT,
                     ADD COLUMN IF NOT EXISTS delivery_checkbox_error TEXT,
-                    ADD COLUMN IF NOT EXISTS delivery_fiscalized_at TIMESTAMPTZ
+                    ADD COLUMN IF NOT EXISTS delivery_fiscalized_at TIMESTAMPTZ,
+                    ADD COLUMN IF NOT EXISTS delivery_checked_at TIMESTAMPTZ
                 """
             )
 
@@ -4680,6 +4739,23 @@ def fiscalize_checkbox_receipt(order_id: str, items: list, amount) -> str:
     )
 
     token = checkbox_signin()
+    existing_response = requests.get(
+        f"{CHECKBOX_API_URL}/receipts/{receipt_id}",
+        headers=checkbox_headers(token),
+        timeout=30,
+    )
+
+    if existing_response.status_code == 200:
+
+        return receipt_id
+
+    if existing_response.status_code != 404:
+
+        raise RuntimeError(
+            existing_response.text[:300]
+            or "Checkbox receipt lookup failed"
+        )
+
     response = requests.post(
         f"{CHECKBOX_API_URL}/receipts/sell",
         headers=checkbox_headers(token),
@@ -4704,6 +4780,18 @@ def fiscalize_checkbox_receipt(order_id: str, items: list, amount) -> str:
     except Exception:
 
         result = {}
+
+    if response.status_code == 409:
+
+        duplicate_response = requests.get(
+            f"{CHECKBOX_API_URL}/receipts/{receipt_id}",
+            headers=checkbox_headers(token),
+            timeout=30,
+        )
+
+        if duplicate_response.status_code == 200:
+
+            return receipt_id
 
     if response.status_code >= 400:
 
@@ -4746,6 +4834,23 @@ def fiscalize_checkbox_return(order_id: str, items: list, amount) -> str:
         (Decimal(str(amount)) * 100).quantize(Decimal("1"))
     )
     token = checkbox_signin()
+    existing_response = requests.get(
+        f"{CHECKBOX_API_URL}/receipts/{receipt_id}",
+        headers=checkbox_headers(token),
+        timeout=30,
+    )
+
+    if existing_response.status_code == 200:
+
+        return receipt_id
+
+    if existing_response.status_code != 404:
+
+        raise RuntimeError(
+            existing_response.text[:300]
+            or "Checkbox receipt lookup failed"
+        )
+
     response = requests.post(
         f"{CHECKBOX_API_URL}/receipts/sell",
         headers=checkbox_headers(token),
@@ -4770,6 +4875,18 @@ def fiscalize_checkbox_return(order_id: str, items: list, amount) -> str:
     except Exception:
 
         result = {}
+
+    if response.status_code == 409:
+
+        duplicate_response = requests.get(
+            f"{CHECKBOX_API_URL}/receipts/{receipt_id}",
+            headers=checkbox_headers(token),
+            timeout=30,
+        )
+
+        if duplicate_response.status_code == 200:
+
+            return receipt_id
 
     if response.status_code >= 400:
 
@@ -7206,8 +7323,11 @@ def claim_store_delivery_fiscalization(keycrm_order_id: int):
                       )
                   )
                   AND delivery_checkbox_receipt_id IS NULL
-                  AND COALESCE(delivery_checkbox_status, 'new')
-                      NOT IN ('processing', 'created')
+                  AND COALESCE(delivery_checkbox_status, 'new') <> 'created'
+                  AND (
+                      COALESCE(delivery_checkbox_status, 'new') <> 'processing'
+                      OR updated_at < NOW() - INTERVAL '10 minutes'
+                  )
                 RETURNING order_id, amount, store_order_total,
                           store_order_items, items, description
                 """,
@@ -7460,16 +7580,32 @@ def pending_store_delivery_fiscalizations(limit: int = 50) -> list[int]:
                       )
                   )
                   AND delivery_checkbox_receipt_id IS NULL
-                  AND COALESCE(delivery_checkbox_status, 'new')
-                      NOT IN ('processing', 'created')
+                  AND COALESCE(delivery_checkbox_status, 'new') <> 'created'
                   AND keycrm_order_id IS NOT NULL
-                ORDER BY updated_at
+                ORDER BY delivery_checked_at NULLS FIRST, updated_at
                 LIMIT %s
                 """,
                 (limit,),
             )
 
             return [int(row[0]) for row in cursor.fetchall()]
+
+
+def mark_store_delivery_checked(keycrm_order_id: int):
+
+    with get_db() as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                UPDATE invoices
+                SET delivery_checked_at = NOW()
+                WHERE keycrm_order_id = %s
+                  AND delivery_checkbox_receipt_id IS NULL
+                """,
+                (keycrm_order_id,),
+            )
 
 
 def store_delivery_fiscalization_retry_worker():
@@ -7498,6 +7634,7 @@ def store_delivery_fiscalization_retry_worker():
                             or int(status_id) not in delivered_status_ids
                         ):
 
+                            mark_store_delivery_checked(keycrm_order_id)
                             continue
 
                         fiscalize_delivered_store_order(keycrm_order_id)
@@ -8094,6 +8231,23 @@ def fiscalize_checkbox_receipt(order_id: str, items: list, amount) -> str:
     )
 
     token = checkbox_signin()
+    existing_response = requests.get(
+        f"{CHECKBOX_API_URL}/receipts/{receipt_id}",
+        headers=checkbox_headers(token),
+        timeout=30,
+    )
+
+    if existing_response.status_code == 200:
+
+        return receipt_id
+
+    if existing_response.status_code != 404:
+
+        raise RuntimeError(
+            existing_response.text[:300]
+            or "Checkbox receipt lookup failed"
+        )
+
     response = requests.post(
         f"{CHECKBOX_API_URL}/receipts/sell",
         headers=checkbox_headers(token),
@@ -8118,6 +8272,18 @@ def fiscalize_checkbox_receipt(order_id: str, items: list, amount) -> str:
     except Exception:
 
         result = {}
+
+    if response.status_code == 409:
+
+        duplicate_response = requests.get(
+            f"{CHECKBOX_API_URL}/receipts/{receipt_id}",
+            headers=checkbox_headers(token),
+            timeout=30,
+        )
+
+        if duplicate_response.status_code == 200:
+
+            return receipt_id
 
     if response.status_code >= 400:
 
