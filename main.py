@@ -3023,7 +3023,21 @@ def ensure_store_invoice_columns():
                     ADD COLUMN IF NOT EXISTS delivery_checkbox_status TEXT,
                     ADD COLUMN IF NOT EXISTS delivery_checkbox_error TEXT,
                     ADD COLUMN IF NOT EXISTS delivery_fiscalized_at TIMESTAMPTZ,
-                    ADD COLUMN IF NOT EXISTS delivery_checked_at TIMESTAMPTZ
+                    ADD COLUMN IF NOT EXISTS delivery_checked_at TIMESTAMPTZ,
+                    ADD COLUMN IF NOT EXISTS delivery_attempt_count INTEGER
+                        NOT NULL DEFAULT 0,
+                    ADD COLUMN IF NOT EXISTS delivery_last_attempt_at TIMESTAMPTZ
+                """
+            )
+
+            cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS invoices_delivery_fiscalization_idx
+                ON invoices (delivery_checked_at, updated_at)
+                WHERE created_by_name = 'Flawless website'
+                  AND status = 'success'
+                  AND keycrm_order_id IS NOT NULL
+                  AND delivery_checkbox_receipt_id IS NULL
                 """
             )
 
@@ -7310,6 +7324,8 @@ def claim_store_delivery_fiscalization(keycrm_order_id: int):
                 UPDATE invoices
                 SET delivery_checkbox_status = 'processing',
                     delivery_checkbox_error = NULL,
+                    delivery_attempt_count = delivery_attempt_count + 1,
+                    delivery_last_attempt_at = NOW(),
                     updated_at = NOW()
                 WHERE keycrm_order_id = %s
                   AND created_by_name = 'Flawless website'
@@ -7608,6 +7624,39 @@ def mark_store_delivery_checked(keycrm_order_id: int):
             )
 
 
+STORE_DELIVERY_ALERT_COOLDOWN_SECONDS = 15 * 60
+store_delivery_alerted_at = {}
+
+
+def alert_store_delivery_failure(keycrm_order_id, error):
+
+    alert_key = str(keycrm_order_id)
+    now = time.monotonic()
+    last_alert = store_delivery_alerted_at.get(alert_key, 0)
+
+    if now - last_alert < STORE_DELIVERY_ALERT_COOLDOWN_SECONDS:
+
+        return
+
+    store_delivery_alerted_at[alert_key] = now
+    message = (
+        "🚨 <b>Не вдалося створити чек післяплати</b>\n"
+        f"Замовлення CRM: <b>#{html.escape(alert_key)}</b>\n"
+        f"Помилка: {html.escape(str(error)[:350])}\n"
+        "Бот повторить спробу автоматично."
+    )
+
+    for user_id in ALLOWED_USER_IDS:
+
+        try:
+
+            bot.send_message(user_id, message)
+
+        except Exception:
+
+            pass
+
+
 def store_delivery_fiscalization_retry_worker():
 
     while True:
@@ -7634,7 +7683,6 @@ def store_delivery_fiscalization_retry_worker():
                             or int(status_id) not in delivered_status_ids
                         ):
 
-                            mark_store_delivery_checked(keycrm_order_id)
                             continue
 
                         fiscalize_delivered_store_order(keycrm_order_id)
@@ -7646,6 +7694,26 @@ def store_delivery_fiscalization_retry_worker():
                             keycrm_order_id,
                             str(error),
                         )
+
+                        alert_store_delivery_failure(keycrm_order_id, error)
+
+                    finally:
+
+                        # A permanently broken order must never pin the first
+                        # page and prevent newer deliveries from being checked.
+                        # Failed orders remain eligible and return on the next
+                        # fair round-robin pass.
+                        try:
+
+                            mark_store_delivery_checked(keycrm_order_id)
+
+                        except Exception as error:
+
+                            print(
+                                "Store delivery check timestamp failed:",
+                                keycrm_order_id,
+                                str(error),
+                            )
 
         except Exception as error:
 
