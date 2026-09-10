@@ -5,6 +5,7 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python refund_id_patch.py && gunicorn main:app --bind 0.0.0.0:$PORT
+    healthCheckPath: /api/health
     envVars:
       - key: BOT_TOKEN
         sync: false

@@ -7626,6 +7626,42 @@ def mark_store_delivery_checked(keycrm_order_id: int):
 
 STORE_DELIVERY_ALERT_COOLDOWN_SECONDS = 15 * 60
 store_delivery_alerted_at = {}
+store_delivery_worker_heartbeat = time.monotonic()
+
+
+def touch_store_delivery_worker_heartbeat():
+
+    global store_delivery_worker_heartbeat
+    store_delivery_worker_heartbeat = time.monotonic()
+
+
+@app.route("/api/health", methods=["GET"])
+def application_health():
+
+    worker_age = time.monotonic() - store_delivery_worker_heartbeat
+
+    if worker_age > 180:
+
+        return {
+            "ok": False,
+            "delivery_worker": "stalled",
+            "heartbeat_age_seconds": int(worker_age),
+        }, 503
+
+    try:
+
+        with get_db() as connection:
+
+            with connection.cursor() as cursor:
+
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+
+    except Exception:
+
+        return {"ok": False, "database": "unavailable"}, 503
+
+    return {"ok": True, "delivery_worker": "running"}, 200
 
 
 def alert_store_delivery_failure(keycrm_order_id, error):
@@ -7661,6 +7697,8 @@ def store_delivery_fiscalization_retry_worker():
 
     while True:
 
+        touch_store_delivery_worker_heartbeat()
+
         try:
 
             if checkbox_shift_is_open():
@@ -7668,6 +7706,8 @@ def store_delivery_fiscalization_retry_worker():
                 delivered_status_ids = keycrm_delivered_status_ids()
 
                 for keycrm_order_id in pending_store_delivery_fiscalizations():
+
+                    touch_store_delivery_worker_heartbeat()
 
                     try:
 
@@ -7719,6 +7759,9 @@ def store_delivery_fiscalization_retry_worker():
 
             print(f"Store delivery retry worker failed: {error}")
 
+            alert_store_delivery_failure("worker", error)
+
+        touch_store_delivery_worker_heartbeat()
         time.sleep(60)
 
 init_db()
