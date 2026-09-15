@@ -7759,7 +7759,7 @@ def store_delivery_fiscalization_retry_worker():
 
             print(f"Store delivery retry worker failed: {error}")
 
-            alert_store_delivery_failure("worker", error)
+            
 
         touch_store_delivery_worker_heartbeat()
         time.sleep(60)
