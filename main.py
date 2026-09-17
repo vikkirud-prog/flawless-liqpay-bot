@@ -7709,6 +7709,8 @@ def store_delivery_fiscalization_retry_worker():
 
                     touch_store_delivery_worker_heartbeat()
 
+                    delivery_confirmed = False
+
                     try:
 
                         order = keycrm_request(f"order/{keycrm_order_id}")
@@ -7725,17 +7727,22 @@ def store_delivery_fiscalization_retry_worker():
 
                             continue
 
+                        delivery_confirmed = True
                         fiscalize_delivered_store_order(keycrm_order_id)
 
                     except Exception as error:
 
                         print(
-                            "Store delivery fiscalization retry failed:",
+                            ("Store delivery fiscalization retry failed:"
+                             if delivery_confirmed
+                             else "Store delivery status check failed:"),
                             keycrm_order_id,
                             str(error),
                         )
 
-                        alert_store_delivery_failure(keycrm_order_id, error)
+                        # Status lookup failures do not prove receipt failure.
+                        if delivery_confirmed:
+                            alert_store_delivery_failure(keycrm_order_id, error)
 
                     finally:
 
