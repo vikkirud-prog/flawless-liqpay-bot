@@ -1163,9 +1163,11 @@ def amount_menu():
     markup.row(
         telebot.types.KeyboardButton("150"),
         telebot.types.KeyboardButton("590"),
+        telebot.types.KeyboardButton("490"),
     )
 
     for left_amount, right_amount in (
+        ("850", "765"),
         ("990", "891"),
         ("890", "801"),
         ("650", "585"),
@@ -1191,6 +1193,7 @@ def product_menu():
     for product_name in (
         "Лонгслів",
         "Комбінезон",
+        "Термободі тепле",
         "Боді з плечиками трикотаж",
         "Боді мереживо корсетне",
         "Флісовий комплект",
@@ -5344,9 +5347,11 @@ def amount_menu():
     markup.row(
         telebot.types.KeyboardButton("150"),
         telebot.types.KeyboardButton("590"),
+        telebot.types.KeyboardButton("490"),
     )
 
     for left_amount, right_amount in (
+        ("850", "765"),
         ("990", "891"),
         ("890", "801"),
         ("650", "585"),
@@ -5372,6 +5377,7 @@ def product_menu():
     for product_name in (
         "Лонгслів",
         "Комбінезон",
+        "Термободі тепле",
         "Боді з плечиками трикотаж",
         "Боді мереживо корсетне",
         "Флісовий комплект",
@@ -8677,9 +8683,11 @@ def amount_menu():
     markup.row(
         telebot.types.KeyboardButton("150"),
         telebot.types.KeyboardButton("590"),
+        telebot.types.KeyboardButton("490"),
     )
 
     for left_amount, right_amount in (
+        ("850", "765"),
         ("990", "891"),
         ("890", "801"),
         ("650", "585"),
@@ -8705,6 +8713,7 @@ def product_menu():
     for product_name in (
         "Лонгслів",
         "Комбінезон",
+        "Термободі тепле",
         "Боді з плечиками трикотаж",
         "Боді мереживо корсетне",
         "Флісовий комплект",
