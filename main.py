@@ -1160,22 +1160,13 @@ def amount_menu():
         one_time_keyboard=True,
     )
 
-    markup.row(
-        telebot.types.KeyboardButton("150"),
-        telebot.types.KeyboardButton("590"),
-        telebot.types.KeyboardButton("490"),
-    )
-
     for left_amount, right_amount in (
-        ("850", "765"),
-        ("990", "891"),
-        ("890", "801"),
-        ("650", "585"),
-        ("690", "621"),
-        ("790", "711"),
-        ("1590", "1431"),
+        ("150", "490"),
+        ("552", "790"),
+        ("680", "1272"),
+        ("792", "990"),
+        ("1080", "690"),
     ):
-
         markup.row(
             telebot.types.KeyboardButton(left_amount),
             telebot.types.KeyboardButton(right_amount),
@@ -5311,22 +5302,13 @@ def amount_menu():
         one_time_keyboard=True,
     )
 
-    markup.row(
-        telebot.types.KeyboardButton("150"),
-        telebot.types.KeyboardButton("590"),
-        telebot.types.KeyboardButton("490"),
-    )
-
     for left_amount, right_amount in (
-        ("850", "765"),
-        ("990", "891"),
-        ("890", "801"),
-        ("650", "585"),
-        ("690", "621"),
-        ("790", "711"),
-        ("1590", "1431"),
+        ("150", "490"),
+        ("552", "790"),
+        ("680", "1272"),
+        ("792", "990"),
+        ("1080", "690"),
     ):
-
         markup.row(
             telebot.types.KeyboardButton(left_amount),
             telebot.types.KeyboardButton(right_amount),
@@ -8647,22 +8629,13 @@ def amount_menu():
         one_time_keyboard=True,
     )
 
-    markup.row(
-        telebot.types.KeyboardButton("150"),
-        telebot.types.KeyboardButton("590"),
-        telebot.types.KeyboardButton("490"),
-    )
-
     for left_amount, right_amount in (
-        ("850", "765"),
-        ("990", "891"),
-        ("890", "801"),
-        ("650", "585"),
-        ("690", "621"),
-        ("790", "711"),
-        ("1590", "1431"),
+        ("150", "490"),
+        ("552", "790"),
+        ("680", "1272"),
+        ("792", "990"),
+        ("1080", "690"),
     ):
-
         markup.row(
             telebot.types.KeyboardButton(left_amount),
             telebot.types.KeyboardButton(right_amount),
@@ -10258,4 +10231,5 @@ if __name__ == "__main__":
     print(f"Flawless LiqPay bot запущен на порту {PORT}")
 
     app.run(host="0.0.0.0", port=PORT)
+
 
