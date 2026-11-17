@@ -3068,11 +3068,7 @@ def store_source_id() -> int:
 
     return int(sources[0]["id"])
 
-STORE_PROMO_CODES = {
-    "FLAWLESS10": Decimal("10"),
-    "FLAWLESS-15": Decimal("15"),
-    "LOVE": Decimal("20"),
-}
+
 
 # Products created manually in the website admin can temporarily carry a
 # storefront-only id. Keep the checkout linked to the existing KeyCRM product
@@ -3302,39 +3298,13 @@ def store_prepare_items(
             }
         )
 
-    if len(prepared) == 2:
-
-        cheaper_index = min(
-            range(2),
-            key=lambda index: prepared[index]["original_price"],
-        )
-        prepared[cheaper_index]["discount_percent"] = Decimal("10")
-
-    elif len(prepared) >= 3:
-
-        for item in prepared:
-
-            item["discount_percent"] = Decimal("10")
-
-    promo_discount = STORE_PROMO_CODES.get(promo_code, Decimal("0"))
-
-    if promo_discount:
-
-        for item in prepared:
-
-            item["discount_percent"] = max(
-                item["discount_percent"],
-                promo_discount,
-            )
-
     subtotal = Decimal("0")
     total = Decimal("0")
 
     for item in prepared:
 
         original_price = item["original_price"]
-        multiplier = Decimal("1") - item["discount_percent"] / Decimal("100")
-        item["price"] = (original_price * multiplier).quantize(Decimal("0.01"))
+        item["price"] = original_price.quantize(Decimal("0.01"))
         subtotal += original_price
         total += item["price"]
 
@@ -3646,15 +3616,12 @@ def store_checkout():
         warehouse = str(delivery.get("warehouse") or "").strip()
         comment = str(delivery.get("comment") or "").strip()
         payment_type = str(payload.get("paymentType") or "full").strip()
-        promo_code = str(payload.get("promoCode") or "").strip().upper()
+        # Ignore legacy promo codes submitted by cached storefronts.
+        promo_code = ""
 
         if payment_type not in {"full", "prepay"}:
 
             payment_type = "full"
-
-        if promo_code and promo_code not in STORE_PROMO_CODES:
-
-            raise ValueError("Промокод не знайдено")
 
         if len(name) < 2:
 
