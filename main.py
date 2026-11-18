@@ -3065,6 +3065,8 @@ def store_source_id() -> int:
 # storefront-only id. Keep the checkout linked to the existing KeyCRM product
 # until the catalogue record is resynchronised.
 STORE_PRODUCT_ID_ALIASES = {
+    "product-1794658794936": "79",
+    "лонг базовий бавовна": "79",
     "product-1785955631161": "74",
     "лонг на гачках бавовна": "74",
     "product-1786306353825": "75",
@@ -10231,5 +10233,6 @@ if __name__ == "__main__":
     print(f"Flawless LiqPay bot запущен на порту {PORT}")
 
     app.run(host="0.0.0.0", port=PORT)
+
 
 
