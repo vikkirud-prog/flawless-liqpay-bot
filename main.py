@@ -3361,6 +3361,21 @@ def store_existing_checkout(order_id: str):
 
             return cursor.fetchone()
 
+def store_marketing_fields(value):
+    """Accept only bounded UTM strings; analytics must never block checkout."""
+    if not isinstance(value, dict):
+        return {}
+    result = {}
+    for key in ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"):
+        raw = value.get(key)
+        if not isinstance(raw, str):
+            continue
+        clean = "".join(ch for ch in raw if ch.isprintable()).strip()[:255]
+        if clean:
+            result[key] = clean
+    return result
+
+
 def store_create_keycrm_order(
     source_uuid: str,
     customer: dict,
@@ -3371,6 +3386,7 @@ def store_create_keycrm_order(
     payment_type: str,
     payment_amount: Decimal,
     promo_code: str = "",
+    marketing=None,
 ):
 
     payment_label = (
@@ -3387,6 +3403,13 @@ def store_create_keycrm_order(
         f"Спосіб оплати: {payment_label}",
         f"Сума LiqPay: {payment_amount:.2f} UAH",
     ]
+
+    marketing = store_marketing_fields(marketing)
+    if marketing:
+        comment_lines.append("Джерело переходу: " + marketing.get("utm_source", "не визначено"))
+        for key, label in (("utm_medium", "Тип трафіку"), ("utm_campaign", "Кампанія"), ("utm_content", "Оголошення")):
+            if marketing.get(key):
+                comment_lines.append(f"{label}: {marketing[key]}")
 
     if promo_code:
 
@@ -3443,6 +3466,9 @@ def store_create_keycrm_order(
             for item in items
         ],
     }
+
+    if marketing:
+        payload["marketing"] = marketing
 
     if awaiting_status_id:
 
@@ -3687,6 +3713,7 @@ def store_checkout():
             payment_type,
             payment_amount,
             promo_code,
+            marketing=payload.get("marketing"),
         )
         keycrm_order_id = crm_order.get("id")
 
@@ -10215,8 +10242,36 @@ if "store_checkout_live" not in app.view_functions:
         methods=["POST", "OPTIONS"],
     )
 
+def store_payment_status():
+    """Return only payment confirmation for an opaque storefront order reference."""
+    order_id = str(request.args.get("order_id") or "")
+    if not re.fullmatch(r"flawless_site_[0-9a-f]{24}", order_id):
+        return store_checkout_response({"error": "Invalid order reference"}, 400)
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT status, store_order_total, amount, store_payment_type "
+                "FROM invoices WHERE order_id = %s "
+                "AND created_by_name = 'Flawless website' LIMIT 1",
+                (order_id,),
+            )
+            row = cursor.fetchone()
+    if not row:
+        return store_checkout_response({"error": "Order not found"}, 404)
+    status, total, amount, payment_type = row
+    return store_checkout_response({
+        "order_id": order_id,
+        "paid": status == "success",
+        "value": float(total or amount),
+        "payment_amount": float(amount),
+        "payment_type": payment_type,
+        "currency": "UAH",
+    })
+
+
 bot = LIVE_BOT
 app = LIVE_APP
+app.add_url_rule("/api/store/payment-status", endpoint="store_payment_status", view_func=store_payment_status, methods=["GET"])
 setup_webhook()
 
 if "keycrm_order_status_webhook_live" not in app.view_functions:
